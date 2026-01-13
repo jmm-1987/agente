@@ -44,13 +44,19 @@ class TelegramBotHandler:
     
     async def handle_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Procesa mensajes de texto"""
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"[HANDLER] handle_text_message llamado para update {update.update_id}")
+        
         text = update.message.text
         
         if not text:
+            logger.warning(f"[HANDLER] Mensaje sin texto en update {update.update_id}")
             return
         
         text_lower = text.lower().strip()
         reply_markup = self._get_reply_keyboard()
+        logger.info(f"[HANDLER] Procesando texto: {text_lower[:50]}")
         
         # Manejar botones del teclado
         if text == "📋 Mostrar tareas pendientes":
@@ -98,6 +104,10 @@ class TelegramBotHandler:
     
     async def handle_voice_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Procesa mensaje de voz"""
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"[HANDLER] handle_voice_message llamado para update {update.update_id}")
+        
         user = update.effective_user
         voice = update.message.voice
         
