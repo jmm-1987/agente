@@ -1,0 +1,15 @@
+Flask==3.0.0
+python-telegram-bot>=22.5
+faster-whisper>=1.2.1
+rapidfuzz==3.5.2
+dateparser==1.2.0
+gunicorn==21.2.0
+
+# Google Calendar (opcional)
+google-auth==2.25.2
+google-auth-oauthlib==1.2.0
+google-api-python-client==2.108.0
+
+# Utilidades
+requests==2.31.0
+python-dotenv==1.0.0

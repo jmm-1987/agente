@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+
+{% block title %}Tareas - Agenda Telegram{% endblock %}
+
+{% block content %}
+<h2></h2>
+
+<div class="filters">
+    <form method="GET" action="{{ url_for('tasks') }}" class="filter-form">
+        <select name="status">
+            <option value="all" {% if current_status == 'all' %}selected{% endif %}>📊 Todos los estados</option>
+            <option value="open" {% if current_status == 'open' %}selected{% endif %}>🟦 Abiertas</option>
+            <option value="completed" {% if current_status == 'completed' %}selected{% endif %}>✅ Completadas</option>
+            <option value="cancelled" {% if current_status == 'cancelled' %}selected{% endif %}>❌ Canceladas</option>
+        </select>
+        
+        <select name="priority">
+            <option value="all" {% if current_priority == 'all' %}selected{% endif %}>⚡ Todas las prioridades</option>
+            <option value="urgent" {% if current_priority == 'urgent' %}selected{% endif %}>🔴 Urgente</option>
+            <option value="high" {% if current_priority == 'high' %}selected{% endif %}>🟠 Alta</option>
+            <option value="normal" {% if current_priority == 'normal' %}selected{% endif %}>🟡 Normal</option>
+            <option value="low" {% if current_priority == 'low' %}selected{% endif %}>🟢 Baja</option>
+        </select>
+        
+        <select name="user_id">
+            <option value="">👤 Todos los usuarios</option>
+            {% for uid, uname in users.items() %}
+            <option value="{{ uid }}" {% if current_user_id == uid %}selected{% endif %}>
+                {{ uname }}
+            </option>
+            {% endfor %}
+        </select>
+        
+        <input type="date" name="task_date" value="{{ current_task_date }}" placeholder="Fecha de tarea" style="padding: 0.4rem 0.7rem; border: 1.5px solid #e0e0e0; border-radius: 6px; font-size: 0.85rem; background: white; cursor: pointer;">
+        
+        <button type="submit" class="btn btn-primary">🔍 Filtrar</button>
+        <a href="{{ url_for('tasks') }}" class="btn btn-secondary">🔄 Limpiar</a>
+    </form>
+</div>
+
+<div class="tasks-list">
+    {% if tasks %}
+    <div class="tasks-grid">
+        {% for task in tasks %}
+        <div class="task-card">
+            <div class="task-card-header">
+                <h3 class="task-card-title">{{ task.title }}</h3>
+                <span class="task-card-id">#{{ task.id }}</span>
+            </div>
+            
+            <div class="task-card-body">
+                {% if task.ampliacion %}
+                <div class="task-ampliacion" style="margin-bottom: 1rem; padding: 0.75rem; background: #f0f7ff; border-radius: 6px; border-left: 3px solid #4285F4;">
+                    <strong style="color: #4285F4; font-size: 0.85rem;">📄 Ampliación:</strong>
+                    <p style="margin: 0.5rem 0 0 0; color: #495057; font-size: 0.9rem; white-space: pre-wrap;">{{ task.ampliacion }}</p>
+                </div>
+                {% endif %}
+                
+                <div class="task-card-meta">
+                    {% if task.client_id %}
+                        {% set client = clients|selectattr('id', 'equalto', task.client_id)|first %}
+                        {% if client %}
+                        <span class="task-card-client">
+                            👤 {{ client.name }}
+                        </span>
+                        {% endif %}
+                    {% elif task.client_name_raw %}
+                        <span class="task-card-client">
+                            👤 {{ task.client_name_raw }} <small>(sin asociar)</small>
+                        </span>
+                    {% endif %}
+                    
+                    {% if task.task_date %}
+                    <span class="task-card-date">
+                        📅 {{ task.task_date[:10] }}
+                    </span>
+                    {% endif %}
+                    
+                    <span class="task-card-user">
+                        👤 {{ task.user_name or ('Usuario ' + task.user_id|string) }}
+                    </span>
+                </div>
+                
+                <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.5rem;">
+                    <span class="priority-badge priority-{{ task.priority }}">
+                        {{ task.priority }}
+                    </span>
+                    <span class="status-badge status-{{ task.status }}">
+                        {{ task.status }}
+                    </span>
+                </div>
+                
+                {% if task.solution %}
+                <div class="task-solution" style="margin-top: 1rem; padding: 0.75rem; background: #f8f9fa; border-radius: 6px; border-left: 3px solid #1e3a5f;">
+                    <strong style="color: #1e3a5f; font-size: 0.85rem;">💡 Solución:</strong>
+                    <p style="margin: 0.5rem 0 0 0; color: #495057; font-size: 0.9rem; white-space: pre-wrap;">{{ task.solution }}</p>
+                </div>
+                {% endif %}
+            </div>
+            
+            <div class="task-card-footer">
+                <div class="task-card-actions">
+                    <button type="button" class="btn btn-small btn-solution" data-task-id="{{ task.id }}" data-task-title="{{ task.title|e }}" data-solution="{{ task.solution|tojson|e if task.solution else '' }}" onclick="openSolutionModalFromButton(this)" title="Añadir/Editar solución">
+                        💡 {% if task.solution %}Editar{% else %}Añadir{% endif %} Solución
+                    </button>
+                    <button type="button" class="btn btn-small btn-google-calendar" onclick="return false;" title="Añadir a Google Calendar">
+                        <svg width="18" height="18" viewBox="0 0 24 24" style="vertical-align: middle; margin-right: 4px;">
+                            <path fill="#4285F4" d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zm0-12H5V6h14v2z"/>
+                            <circle fill="#EA4335" cx="8" cy="13" r="1"/>
+                            <circle fill="#EA4335" cx="12" cy="13" r="1"/>
+                            <circle fill="#EA4335" cx="16" cy="13" r="1"/>
+                            <circle fill="#EA4335" cx="8" cy="17" r="1"/>
+                            <circle fill="#EA4335" cx="12" cy="17" r="1"/>
+                            <circle fill="#EA4335" cx="16" cy="17" r="1"/>
+                        </svg>
+                        Añadir a Google Calendar
+                    </button>
+                    {% if task.status == 'open' %}
+                    <form method="POST" action="{{ url_for('complete_task', task_id=task.id) }}" style="display: inline;">
+                        <button type="submit" class="btn btn-small btn-success">✅ Completar</button>
+                    </form>
+                    {% endif %}
+                    <form method="POST" action="{{ url_for('delete_task', task_id=task.id) }}" style="display: inline;" onsubmit="return confirm('¿Eliminar esta tarea?');">
+                        <button type="submit" class="btn btn-small btn-danger">🗑️ Eliminar</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-icon">📭</div>
+        <h3>No hay tareas</h3>
+        <p>No se encontraron tareas con los filtros seleccionados.</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Modal para solución -->
+<div id="solutionModal" class="modal" style="display: none;">
+    <div class="modal-content">
+        <span class="close" onclick="closeSolutionModal()">&times;</span>
+        <h3 style="margin-top: 0;">💡 Añadir/Editar Solución</h3>
+        
+        <div style="margin-bottom: 1.5rem; padding: 1rem; background: #f8f9fa; border-radius: 8px; border-left: 3px solid #1e3a5f;">
+            <strong style="color: #1e3a5f; font-size: 0.9rem; display: block; margin-bottom: 0.5rem;">📋 Tarea:</strong>
+            <p id="modalTaskTitle" style="margin: 0; color: #495057; font-size: 1rem; line-height: 1.5;"></p>
+        </div>
+        
+        <form method="POST" action="" id="solutionForm">
+            <div class="form-group">
+                <label for="solution">Solución/Resolución:</label>
+                <textarea id="solution" name="solution" rows="6" style="width: 100%; padding: 0.5rem; border: 1.5px solid #e0e0e0; border-radius: 6px; font-size: 0.9rem; font-family: inherit; resize: vertical;"></textarea>
+            </div>
+            <div style="display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 1rem;">
+                <button type="button" class="btn btn-secondary" onclick="closeSolutionModal()">Cancelar</button>
+                <button type="submit" class="btn btn-primary">Guardar</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function openSolutionModalFromButton(button) {
+    const taskId = button.getAttribute('data-task-id');
+    const taskTitle = button.getAttribute('data-task-title');
+    const solutionJson = button.getAttribute('data-solution');
+    let currentSolution = '';
+    
+    if (solutionJson) {
+        try {
+            currentSolution = JSON.parse(solutionJson);
+        } catch (e) {
+            currentSolution = solutionJson;
+        }
+    }
+    
+    openSolutionModal(taskId, taskTitle, currentSolution);
+}
+
+function openSolutionModal(taskId, taskTitle, currentSolution) {
+    const modal = document.getElementById('solutionModal');
+    const form = document.getElementById('solutionForm');
+    const textarea = document.getElementById('solution');
+    const titleElement = document.getElementById('modalTaskTitle');
+    
+    form.action = '/admin/tasks/' + taskId + '/solution';
+    textarea.value = currentSolution || '';
+    titleElement.textContent = taskTitle || 'Sin título';
+    modal.style.display = 'flex';
+}
+
+function closeSolutionModal() {
+    document.getElementById('solutionModal').style.display = 'none';
+}
+
+// Cerrar modal al hacer clic fuera
+window.onclick = function(event) {
+    const modal = document.getElementById('solutionModal');
+    if (event.target == modal) {
+        closeSolutionModal();
+    }
+}
+</script>
+{% endblock %}
+

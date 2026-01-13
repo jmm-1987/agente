@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+
+{% block title %}Clientes - Agenda Telegram{% endblock %}
+
+{% block content %}
+<h2>Clientes</h2>
+
+<div class="create-form">
+    <h3>Crear Cliente</h3>
+    <form method="POST" action="{{ url_for('create_client') }}">
+        <div class="form-group">
+            <label for="name">Nombre:</label>
+            <input type="text" id="name" name="name" required>
+        </div>
+        <div class="form-group">
+            <label for="aliases">Aliases (separados por comas):</label>
+            <input type="text" id="aliases" name="aliases" placeholder="alias1, alias2, alias3">
+        </div>
+        <button type="submit" class="btn btn-primary">Crear</button>
+    </form>
+</div>
+
+<div class="clients-list">
+    {% if clients %}
+    <table class="table">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Nombre</th>
+                <th>Aliases</th>
+                <th>Creado</th>
+                <th>Acciones</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for client in clients %}
+            <tr>
+                <td>{{ client.id }}</td>
+                <td>{{ client.name }}</td>
+                <td>
+                    {% if client.aliases %}
+                        {% set aliases_list = client.aliases|fromjson %}
+                        {{ aliases_list|join(', ') }}
+                    {% else %}
+                        -
+                    {% endif %}
+                </td>
+                <td>{{ client.created_at[:10] }}</td>
+                <td>
+                    <button onclick="editClient({{ client.id }}, '{{ client.name }}', '{{ client.aliases or '' }}')" class="btn btn-small btn-secondary">Editar</button>
+                    <form method="POST" action="{{ url_for('delete_client', client_id=client.id) }}" style="display: inline;" onsubmit="return confirm('¿Eliminar este cliente?');">
+                        <button type="submit" class="btn btn-small btn-danger">Eliminar</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p>No hay clientes registrados.</p>
+    {% endif %}
+</div>
+
+<!-- Modal de edición -->
+<div id="editModal" class="modal" style="display: none;">
+    <div class="modal-content">
+        <span class="close" onclick="closeEditModal()">&times;</span>
+        <h3>Editar Cliente</h3>
+        <form id="editForm" method="POST">
+            <div class="form-group">
+                <label for="edit_name">Nombre:</label>
+                <input type="text" id="edit_name" name="name" required>
+            </div>
+            <div class="form-group">
+                <label for="edit_aliases">Aliases (separados por comas):</label>
+                <input type="text" id="edit_aliases" name="aliases">
+            </div>
+            <button type="submit" class="btn btn-primary">Guardar</button>
+            <button type="button" class="btn btn-secondary" onclick="closeEditModal()">Cancelar</button>
+        </form>
+    </div>
+</div>
+
+<script>
+function editClient(id, name, aliases) {
+    document.getElementById('edit_name').value = name;
+    document.getElementById('edit_aliases').value = aliases ? JSON.parse(aliases).join(', ') : '';
+    document.getElementById('editForm').action = '/admin/clients/' + id + '/edit';
+    document.getElementById('editModal').style.display = 'block';
+}
+
+function closeEditModal() {
+    document.getElementById('editModal').style.display = 'none';
+}
+</script>
+{% endblock %}
+
