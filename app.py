@@ -4,6 +4,7 @@ from functools import wraps
 import logging
 import json
 import asyncio
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
@@ -57,31 +58,9 @@ if config.TELEGRAM_BOT_TOKEN:
     telegram_app.add_handler(CommandHandler("start", start_command))
     telegram_app.add_handler(CommandHandler("help", start_command))
     
-    # Inicializar el Application en un thread separado
-    import threading
-    def init_telegram_app():
-        """Inicializa el Application en un event loop separado"""
-        global telegram_initialized
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            logger.info("Inicializando Application de Telegram...")
-            loop.run_until_complete(telegram_app.initialize())
-            loop.run_until_complete(telegram_app.start())
-            telegram_initialized = True
-            logger.info("Application de Telegram inicializado correctamente")
-            # Mantener el loop corriendo para que el Application siga activo
-            loop.run_forever()
-        except Exception as e:
-            logger.error(f"Error inicializando Application: {e}", exc_info=True)
-        finally:
-            loop.close()
-    
-    # Iniciar inicialización en thread separado
-    init_thread = threading.Thread(target=init_telegram_app, daemon=True)
-    init_thread.start()
-    
-    logger.info("Bot de Telegram configurado (modo webhook)")
+    # Inicializar el Application de forma lazy (cuando llegue el primer webhook)
+    # Esto evita problemas con threads en gunicorn
+    logger.info("Bot de Telegram configurado (modo webhook - inicialización lazy)")
 else:
     logger.warning("TELEGRAM_BOT_TOKEN no configurado. Bot deshabilitado.")
 
@@ -126,9 +105,50 @@ def webhook():
         logger.error("Webhook recibido pero bot no configurado")
         return jsonify({'error': 'Bot no configurado'}), 503
     
+    # Inicializar Application de forma lazy si no está inicializado
     if not telegram_initialized:
-        logger.warning("Application aún no está inicializado, esperando...")
-        return jsonify({'error': 'Application no inicializado'}), 503
+        logger.info("[WEBHOOK] Application no inicializado, inicializando ahora...")
+        try:
+            # Inicializar en un thread separado
+            def init_app():
+                global telegram_initialized
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    logger.info("[INIT] Inicializando Application...")
+                    loop.run_until_complete(telegram_app.initialize())
+                    logger.info("[INIT] Application.initialize() completado")
+                    loop.run_until_complete(telegram_app.start())
+                    logger.info("[INIT] Application.start() completado")
+                    telegram_initialized = True
+                    logger.info("[INIT] ✅ Application inicializado correctamente")
+                    # Mantener loop corriendo
+                    loop.run_forever()
+                except Exception as e:
+                    logger.error(f"[INIT] Error: {e}", exc_info=True)
+                    telegram_initialized = False
+                finally:
+                    try:
+                        loop.close()
+                    except:
+                        pass
+            
+            init_thread = threading.Thread(target=init_app, daemon=True, name="TelegramInit")
+            init_thread.start()
+            
+            # Esperar un poco a que se inicialice
+            import time
+            for i in range(10):  # Esperar hasta 2 segundos
+                time.sleep(0.2)
+                if telegram_initialized:
+                    break
+            
+            if not telegram_initialized:
+                logger.warning("[WEBHOOK] Application aún no inicializado después de esperar")
+                return jsonify({'error': 'Application no inicializado'}), 503
+        except Exception as e:
+            logger.error(f"[WEBHOOK] Error en inicialización lazy: {e}", exc_info=True)
+            return jsonify({'error': 'Error inicializando'}), 500
     
     # Verificar secreto si está configurado
     if config.TELEGRAM_WEBHOOK_SECRET:
