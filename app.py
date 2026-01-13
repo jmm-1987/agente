@@ -39,8 +39,7 @@ def tojson_filter(value):
 # Inicializar bot de Telegram
 bot_handler = telegram_bot.TelegramBotHandler()
 telegram_app = None
-executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="telegram_bot")
-telegram_initialized = False
+executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="telegram_bot")
 
 if config.TELEGRAM_BOT_TOKEN:
     telegram_app = Application.builder().token(config.TELEGRAM_BOT_TOKEN).build()
@@ -57,29 +56,7 @@ if config.TELEGRAM_BOT_TOKEN:
     telegram_app.add_handler(CommandHandler("start", start_command))
     telegram_app.add_handler(CommandHandler("help", start_command))
     
-    # Inicializar el Application en un thread separado para modo webhook
-    import threading
-    def init_telegram_app():
-        """Inicializa y ejecuta el Application en un event loop separado"""
-        global telegram_initialized
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            loop.run_until_complete(telegram_app.initialize())
-            loop.run_until_complete(telegram_app.start())
-            telegram_initialized = True
-            logger.info("Bot de Telegram inicializado y corriendo")
-            # Mantener el loop corriendo
-            loop.run_forever()
-        except Exception as e:
-            logger.error(f"Error inicializando bot: {e}", exc_info=True)
-        finally:
-            loop.close()
-    
-    bot_thread = threading.Thread(target=init_telegram_app, daemon=True)
-    bot_thread.start()
-    
-    logger.info("Bot de Telegram configurado")
+    logger.info("Bot de Telegram configurado (modo webhook)")
 else:
     logger.warning("TELEGRAM_BOT_TOKEN no configurado. Bot deshabilitado.")
 
@@ -121,11 +98,8 @@ def logout():
 def webhook():
     """Webhook para recibir actualizaciones de Telegram"""
     if not telegram_app:
+        logger.error("Webhook recibido pero bot no configurado")
         return jsonify({'error': 'Bot no configurado'}), 503
-    
-    if not telegram_initialized:
-        logger.warning("Bot aún no está inicializado, esperando...")
-        return jsonify({'error': 'Bot no inicializado'}), 503
     
     # Verificar secreto si está configurado
     if config.TELEGRAM_WEBHOOK_SECRET:
@@ -135,31 +109,40 @@ def webhook():
             return jsonify({'error': 'Unauthorized'}), 401
     
     try:
-        update = Update.de_json(request.get_json(), telegram_app.bot)
-        update_type = 'message' if update.message else 'callback_query' if update.callback_query else 'other'
-        logger.info(f"Recibida actualización: {update.update_id}, tipo: {update_type}")
+        update_data = request.get_json()
+        if not update_data:
+            logger.warning("Webhook recibido sin datos")
+            return jsonify({'error': 'No data'}), 400
         
-        # Usar update_queue que es thread-safe
-        # El Application ya está corriendo en su propio thread con event loop
-        try:
-            telegram_app.update_queue.put_nowait(update)
-            logger.info(f"Actualización {update.update_id} añadida a la cola correctamente")
-        except Exception as queue_error:
-            logger.error(f"Error añadiendo a la cola: {queue_error}")
-            # Fallback: ejecutar directamente en un thread separado
-            def process_update_sync():
+        update = Update.de_json(update_data, telegram_app.bot)
+        update_type = 'message' if update.message else 'callback_query' if update.callback_query else 'other'
+        logger.info(f"[WEBHOOK] Recibida actualización {update.update_id}, tipo: {update_type}")
+        
+        # Procesar actualización en un thread separado con su propio event loop
+        # Esto es necesario porque process_update es asíncrono
+        def process_update_async():
+            """Ejecuta process_update en un nuevo event loop"""
+            try:
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 try:
+                    logger.info(f"[WEBHOOK] Procesando actualización {update.update_id} en thread separado")
                     loop.run_until_complete(telegram_app.process_update(update))
+                    logger.info(f"[WEBHOOK] Actualización {update.update_id} procesada correctamente")
+                except Exception as e:
+                    logger.error(f"[WEBHOOK] Error procesando actualización {update.update_id}: {e}", exc_info=True)
                 finally:
                     loop.close()
-            executor.submit(process_update_sync)
-            logger.info(f"Actualización {update.update_id} procesada en thread separado")
+            except Exception as e:
+                logger.error(f"[WEBHOOK] Error creando event loop para actualización {update.update_id}: {e}", exc_info=True)
+        
+        # Ejecutar en thread pool para no bloquear Flask
+        executor.submit(process_update_async)
+        logger.info(f"[WEBHOOK] Actualización {update.update_id} enviada a thread pool")
         
         return jsonify({'ok': True})
     except Exception as e:
-        logger.error(f"Error procesando webhook: {e}", exc_info=True)
+        logger.error(f"[WEBHOOK] Error procesando webhook: {e}", exc_info=True)
         return jsonify({'error': str(e)}), 500
 
 
