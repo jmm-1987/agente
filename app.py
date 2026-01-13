@@ -3,6 +3,8 @@ from flask import Flask, request, jsonify, render_template, redirect, url_for, s
 from functools import wraps
 import logging
 import json
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 import config
@@ -37,6 +39,7 @@ def tojson_filter(value):
 # Inicializar bot de Telegram
 bot_handler = telegram_bot.TelegramBotHandler()
 telegram_app = None
+executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="telegram_bot")
 
 if config.TELEGRAM_BOT_TOKEN:
     telegram_app = Application.builder().token(config.TELEGRAM_BOT_TOKEN).build()
@@ -106,10 +109,22 @@ def webhook():
     
     try:
         update = Update.de_json(request.get_json(), telegram_app.bot)
-        telegram_app.process_update(update)
+        # Ejecutar process_update en un thread separado con su propio event loop
+        # Esto evita conflictos con el event loop de Flask/gunicorn
+        def process_update_sync():
+            """Ejecuta process_update en un nuevo event loop"""
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(telegram_app.process_update(update))
+            finally:
+                loop.close()
+        
+        # Ejecutar en thread pool para no bloquear Flask
+        executor.submit(process_update_sync)
         return jsonify({'ok': True})
     except Exception as e:
-        logger.error(f"Error procesando webhook: {e}")
+        logger.error(f"Error procesando webhook: {e}", exc_info=True)
         return jsonify({'error': str(e)}), 500
 
 
