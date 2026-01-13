@@ -211,3 +211,4 @@ Si necesitas ayuda, proporciona:
 - Resultado de `/health` endpoint
 - Variables de entorno configuradas (sin valores sensibles)
 
+
