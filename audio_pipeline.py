@@ -11,6 +11,10 @@ from utils import clean_temp_files
 _whisper_model = None
 _model_lock = threading.Lock()
 
+def is_model_loaded():
+    """Verifica si el modelo ya está cargado"""
+    return _whisper_model is not None
+
 
 def download_telegram_audio(file_path: str, output_path: str) -> bool:
     """Descarga archivo de audio de Telegram usando el bot token"""

@@ -128,7 +128,22 @@ class TelegramBotHandler:
         
         # Procesar audio
         try:
-            await update.message.reply_text("🎤 Procesando audio...", reply_markup=reply_markup)
+            # Mostrar que el bot está trabajando (typing indicator)
+            await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
+            
+            # Verificar si es la primera carga del modelo
+            import audio_pipeline
+            is_first_load = not audio_pipeline.is_model_loaded()
+            
+            if is_first_load:
+                await update.message.reply_text(
+                    "🎤 Procesando audio...\n"
+                    "⏳ Primera vez: cargando modelo (puede tardar 2-3 minutos). "
+                    "Las siguientes veces serán más rápidas.",
+                    reply_markup=reply_markup
+                )
+            else:
+                await update.message.reply_text("🎤 Procesando audio...", reply_markup=reply_markup)
             
             # Obtener archivo de audio
             file = await context.bot.get_file(voice.file_id)
@@ -137,6 +152,9 @@ class TelegramBotHandler:
             import tempfile
             temp_ogg = os.path.join(config.TEMP_DIR, f"audio_{user.id}_{voice.file_id}.ogg")
             await file.download_to_drive(temp_ogg)
+            
+            # Mantener typing indicator activo durante el procesamiento
+            await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
             
             # Pipeline completo: convertir y transcribir
             transcript = audio_pipeline.process_audio_from_file(temp_ogg)
