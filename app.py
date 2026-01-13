@@ -40,6 +40,7 @@ def tojson_filter(value):
 # Inicializar bot de Telegram
 bot_handler = telegram_bot.TelegramBotHandler()
 telegram_app = None
+telegram_loop = None  # Event loop del Application
 executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="telegram_bot")
 telegram_initialized = False
 
@@ -111,9 +112,10 @@ def webhook():
         try:
             # Inicializar en un thread separado
             def init_app():
-                global telegram_initialized
+                global telegram_initialized, telegram_loop
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
+                telegram_loop = loop  # Guardar referencia al loop
                 try:
                     logger.info("[INIT] Inicializando Application...")
                     loop.run_until_complete(telegram_app.initialize())
@@ -127,6 +129,7 @@ def webhook():
                 except Exception as e:
                     logger.error(f"[INIT] Error: {e}", exc_info=True)
                     telegram_initialized = False
+                    telegram_loop = None
                 finally:
                     try:
                         loop.close()
@@ -167,27 +170,31 @@ def webhook():
         update_type = 'message' if update.message else 'callback_query' if update.callback_query else 'other'
         logger.info(f"[WEBHOOK] Recibida actualización {update.update_id}, tipo: {update_type}")
         
-        # Usar update_queue que es thread-safe y funciona con Application inicializado
-        try:
-            telegram_app.update_queue.put_nowait(update)
-            logger.info(f"[WEBHOOK] Actualización {update.update_id} añadida a la cola")
-        except Exception as queue_error:
-            logger.error(f"[WEBHOOK] Error añadiendo a la cola: {queue_error}")
-            # Fallback: procesar directamente en el event loop del Application
-            def process_update_async():
-                """Ejecuta process_update usando el event loop del Application"""
-                try:
-                    # Obtener el event loop del Application si está disponible
-                    loop = asyncio.get_event_loop()
-                    if loop.is_running():
-                        asyncio.create_task(telegram_app.process_update(update))
-                    else:
+        # Procesar actualización directamente usando process_update en el event loop del Application
+        def process_update_async():
+            """Ejecuta process_update usando el event loop del Application"""
+            try:
+                if telegram_loop and telegram_loop.is_running():
+                    # Si el loop está corriendo, usar call_soon_threadsafe para añadir la tarea
+                    future = asyncio.run_coroutine_threadsafe(
+                        telegram_app.process_update(update),
+                        telegram_loop
+                    )
+                    logger.info(f"[WEBHOOK] Actualización {update.update_id} enviada para procesamiento")
+                    # No esperamos el resultado para no bloquear
+                else:
+                    # Si el loop no está corriendo, crear uno nuevo
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    try:
                         loop.run_until_complete(telegram_app.process_update(update))
-                    logger.info(f"[WEBHOOK] Actualización {update.update_id} procesada (fallback)")
-                except Exception as e:
-                    logger.error(f"[WEBHOOK] Error en fallback para actualización {update.update_id}: {e}", exc_info=True)
-            
-            executor.submit(process_update_async)
+                        logger.info(f"[WEBHOOK] Actualización {update.update_id} procesada")
+                    finally:
+                        loop.close()
+            except Exception as e:
+                logger.error(f"[WEBHOOK] Error procesando actualización {update.update_id}: {e}", exc_info=True)
+        
+        executor.submit(process_update_async)
         
         return jsonify({'ok': True})
     except Exception as e:
