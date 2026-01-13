@@ -3,8 +3,13 @@ import os
 import subprocess
 from pathlib import Path
 from typing import Optional
+import threading
 import config
 from utils import clean_temp_files
+
+# Modelo global de Whisper (cargado una sola vez)
+_whisper_model = None
+_model_lock = threading.Lock()
 
 
 def download_telegram_audio(file_path: str, output_path: str) -> bool:
@@ -130,36 +135,64 @@ def convert_to_wav(input_path: str, output_path: str) -> bool:
         raise RuntimeError("Timeout al convertir audio")
 
 
+def _get_whisper_model():
+    """Obtiene el modelo de Whisper (carga una sola vez, thread-safe)"""
+    global _whisper_model
+    
+    if _whisper_model is not None:
+        return _whisper_model
+    
+    with _model_lock:
+        # Doble verificación (double-check locking pattern)
+        if _whisper_model is not None:
+            return _whisper_model
+        
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"[WHISPER] Cargando modelo {config.WHISPER_MODEL} (primera vez, puede tardar unos minutos)...")
+        
+        try:
+            from faster_whisper import WhisperModel
+        except ImportError:
+            raise ImportError(
+                "faster-whisper no está instalado. "
+                "Instala con: pip install faster-whisper"
+            )
+        
+        # Cargar modelo (se cachea automáticamente)
+        # Intentar usar GPU si está disponible, sino CPU
+        device = "cuda" if os.getenv("CUDA_VISIBLE_DEVICES") else "cpu"
+        compute_type = "float16" if device == "cuda" else "int8"
+        
+        try:
+            logger.info(f"[WHISPER] Intentando cargar modelo con device={device}, compute_type={compute_type}")
+            _whisper_model = WhisperModel(config.WHISPER_MODEL, device=device, compute_type=compute_type)
+            logger.info(f"[WHISPER] ✅ Modelo cargado correctamente")
+        except Exception as e:
+            logger.warning(f"[WHISPER] Error con {device}/{compute_type}: {e}, intentando alternativas...")
+            # Si falla con compute_type, intentar con int8 en CPU
+            try:
+                _whisper_model = WhisperModel(config.WHISPER_MODEL, device="cpu", compute_type="int8")
+                logger.info(f"[WHISPER] ✅ Modelo cargado con CPU/int8")
+            except Exception:
+                # Último intento: solo el modelo sin compute_type
+                try:
+                    _whisper_model = WhisperModel(config.WHISPER_MODEL, device="cpu")
+                    logger.info(f"[WHISPER] ✅ Modelo cargado con CPU (sin compute_type)")
+                except Exception:
+                    _whisper_model = WhisperModel(config.WHISPER_MODEL)
+                    logger.info(f"[WHISPER] ✅ Modelo cargado (configuración por defecto)")
+        
+        return _whisper_model
+
+
 def transcribe_audio(audio_path: str, language: str = "es") -> str:
     """Transcribe audio usando faster-whisper con configuración optimizada para español"""
-    try:
-        from faster_whisper import WhisperModel
-    except ImportError:
-        raise ImportError(
-            "faster-whisper no está instalado. "
-            "Instala con: pip install faster-whisper"
-        )
-    
     if not os.path.exists(audio_path):
         raise FileNotFoundError(f"Archivo de audio no existe: {audio_path}")
     
-    # Cargar modelo (se cachea automáticamente)
-    # Intentar usar GPU si está disponible, sino CPU
-    device = "cuda" if os.getenv("CUDA_VISIBLE_DEVICES") else "cpu"
-    compute_type = "float16" if device == "cuda" else "int8"
-    
-    try:
-        model = WhisperModel(config.WHISPER_MODEL, device=device, compute_type=compute_type)
-    except Exception as e:
-        # Si falla con compute_type, intentar con int8 en CPU
-        try:
-            model = WhisperModel(config.WHISPER_MODEL, device="cpu", compute_type="int8")
-        except Exception:
-            # Último intento: solo el modelo sin compute_type
-            try:
-                model = WhisperModel(config.WHISPER_MODEL, device="cpu")
-            except Exception:
-                model = WhisperModel(config.WHISPER_MODEL)
+    # Obtener modelo (cargado una sola vez)
+    model = _get_whisper_model()
     
     # Parámetros optimizados para mejor precisión en español
     # beam_size: número de hipótesis a considerar (mayor = más preciso pero más lento)
