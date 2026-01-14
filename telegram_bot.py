@@ -157,7 +157,31 @@ class TelegramBotHandler:
             await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
             
             # Pipeline completo: convertir y transcribir
-            transcript = audio_pipeline.process_audio_from_file(temp_ogg)
+            # Ejecutar en thread separado para no bloquear el event loop
+            import asyncio
+            import logging
+            logger = logging.getLogger(__name__)
+            
+            logger.info(f"[HANDLER] Iniciando procesamiento de audio para usuario {user.id}")
+            loop = asyncio.get_event_loop()
+            
+            try:
+                transcript = await asyncio.wait_for(
+                    loop.run_in_executor(
+                        None,  # Usar el executor por defecto
+                        audio_pipeline.process_audio_from_file,
+                        temp_ogg
+                    ),
+                    timeout=300  # 5 minutos de timeout
+                )
+                logger.info(f"[HANDLER] Audio procesado correctamente para usuario {user.id}")
+            except asyncio.TimeoutError:
+                logger.error(f"[HANDLER] Timeout procesando audio para usuario {user.id}")
+                await update.message.reply_text(
+                    "❌ El procesamiento del audio tardó demasiado tiempo. Por favor, intenta con un audio más corto.",
+                    reply_markup=reply_markup
+                )
+                return
             
             if not transcript:
                 await update.message.reply_text("❌ No se pudo transcribir el audio.", reply_markup=reply_markup)
