@@ -164,9 +164,9 @@ def _get_whisper_model():
             )
         
         # Cargar modelo (se cachea automáticamente)
-        # Intentar usar GPU si está disponible, sino CPU
-        device = "cuda" if os.getenv("CUDA_VISIBLE_DEVICES") else "cpu"
-        compute_type = "float16" if device == "cuda" else "int8"
+        # Para Render free tier, usar siempre CPU con int8 para minimizar memoria
+        device = "cpu"
+        compute_type = "int8"  # int8 usa menos memoria que float16/float32
         
         try:
             logger.info(f"[WHISPER] Intentando cargar modelo con device={device}, compute_type={compute_type}")

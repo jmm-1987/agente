@@ -46,9 +46,10 @@ TEMP_DIR.mkdir(exist_ok=True)
 
 # Faster Whisper
 # Modelos disponibles: tiny, base, small, medium, large-v2, large-v3
-# Recomendado: 'small' para mejor precisión, 'base' para velocidad
-# 'medium' o 'large-v3' para máxima precisión (más lento)
-WHISPER_MODEL = os.getenv('WHISPER_MODEL', 'small')  # Cambiado a 'small' para mejor precisión
+# Para Render free tier (512MB): usar 'base' o 'tiny'
+# 'base' ofrece buen balance entre precisión y memoria (~150MB)
+# 'tiny' es más ligero pero menos preciso (~75MB)
+WHISPER_MODEL = os.getenv('WHISPER_MODEL', 'base')  # Cambiado a 'base' para mejor uso de memoria
 
 # Parser thresholds
 CLIENT_MATCH_THRESHOLD_AUTO = 85
