@@ -171,19 +171,23 @@ def _get_whisper_model():
         try:
             logger.info(f"[WHISPER] Intentando cargar modelo con device={device}, compute_type={compute_type}")
             _whisper_model = WhisperModel(config.WHISPER_MODEL, device=device, compute_type=compute_type)
-            logger.info(f"[WHISPER] ✅ Modelo cargado correctamente")
+            logger.info(f"[WHISPER] ✅ Modelo cargado correctamente con {device}/{compute_type}")
         except Exception as e:
             logger.warning(f"[WHISPER] Error con {device}/{compute_type}: {e}, intentando alternativas...")
             # Si falla con compute_type, intentar con int8 en CPU
             try:
+                logger.info(f"[WHISPER] Intentando cargar con CPU/int8...")
                 _whisper_model = WhisperModel(config.WHISPER_MODEL, device="cpu", compute_type="int8")
                 logger.info(f"[WHISPER] ✅ Modelo cargado con CPU/int8")
-            except Exception:
+            except Exception as e2:
+                logger.warning(f"[WHISPER] Error con CPU/int8: {e2}, intentando sin compute_type...")
                 # Último intento: solo el modelo sin compute_type
                 try:
+                    logger.info(f"[WHISPER] Intentando cargar con CPU (sin compute_type)...")
                     _whisper_model = WhisperModel(config.WHISPER_MODEL, device="cpu")
                     logger.info(f"[WHISPER] ✅ Modelo cargado con CPU (sin compute_type)")
-                except Exception:
+                except Exception as e3:
+                    logger.warning(f"[WHISPER] Error con CPU sin compute_type: {e3}, intentando configuración por defecto...")
                     _whisper_model = WhisperModel(config.WHISPER_MODEL)
                     logger.info(f"[WHISPER] ✅ Modelo cargado (configuración por defecto)")
         
