@@ -192,11 +192,17 @@ def _get_whisper_model():
 
 def transcribe_audio(audio_path: str, language: str = "es") -> str:
     """Transcribe audio usando faster-whisper con configuración optimizada para español"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
     if not os.path.exists(audio_path):
         raise FileNotFoundError(f"Archivo de audio no existe: {audio_path}")
     
+    logger.info(f"[WHISPER] Iniciando transcripción de {audio_path}")
+    
     # Obtener modelo (cargado una sola vez)
     model = _get_whisper_model()
+    logger.info(f"[WHISPER] Modelo obtenido, iniciando transcripción...")
     
     # Parámetros optimizados para mejor precisión en español
     # beam_size: número de hipótesis a considerar (mayor = más preciso pero más lento)
@@ -218,32 +224,45 @@ def transcribe_audio(audio_path: str, language: str = "es") -> str:
     
     # Transcribir con parámetros optimizados
     try:
+        logger.info(f"[WHISPER] Llamando a model.transcribe()...")
         segments, info = model.transcribe(audio_path, **transcribe_options)
+        logger.info(f"[WHISPER] model.transcribe() completado, procesando segmentos...")
     except TypeError as e:
         # Si algún parámetro no es válido, intentar con parámetros mínimos
+        logger.warning(f"[WHISPER] Error con parámetros avanzados: {e}, intentando alternativas...")
         error_str = str(e).lower()
         if "vad" in error_str or "initial_prompt" in error_str:
             # Intentar sin parámetros avanzados
             try:
+                logger.info(f"[WHISPER] Intentando sin parámetros avanzados...")
                 segments, info = model.transcribe(
                     audio_path,
                     language=language,
                     beam_size=5,
                     temperature=0.0
                 )
-            except Exception:
+                logger.info(f"[WHISPER] Transcripción con parámetros básicos completada")
+            except Exception as e2:
+                logger.warning(f"[WHISPER] Error con parámetros básicos: {e2}, intentando solo con idioma...")
                 # Último recurso: solo idioma
                 segments, info = model.transcribe(audio_path, language=language)
+                logger.info(f"[WHISPER] Transcripción con solo idioma completada")
         else:
             raise
     
     # Concatenar segmentos con mejor manejo de puntuación
+    logger.info(f"[WHISPER] Iterando sobre segmentos...")
     text_parts = []
+    segment_count = 0
     for segment in segments:
+        segment_count += 1
         text = segment.text.strip()
         if text:
             text_parts.append(text)
+            if segment_count % 10 == 0:  # Log cada 10 segmentos
+                logger.info(f"[WHISPER] Procesados {segment_count} segmentos...")
     
+    logger.info(f"[WHISPER] Total de segmentos procesados: {segment_count}")
     transcript = ' '.join(text_parts).strip()
     
     # Limpiar transcripción común: eliminar espacios múltiples, normalizar puntuación
@@ -260,15 +279,22 @@ def transcribe_audio(audio_path: str, language: str = "es") -> str:
 
 def process_audio_from_file(input_file: str) -> str:
     """Pipeline completo: conversión → transcripción (archivo ya descargado)"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
     temp_wav = None
     
     try:
         # 1. Convertir a WAV
+        logger.info(f"[AUDIO_PIPELINE] Iniciando conversión de {input_file} a WAV...")
         temp_wav = os.path.join(config.TEMP_DIR, f"audio_{os.getpid()}.wav")
         convert_to_wav(input_file, temp_wav)
+        logger.info(f"[AUDIO_PIPELINE] Conversión completada: {temp_wav}")
         
         # 2. Transcribir
+        logger.info(f"[AUDIO_PIPELINE] Iniciando transcripción...")
         transcript = transcribe_audio(temp_wav)
+        logger.info(f"[AUDIO_PIPELINE] Transcripción completada: {len(transcript)} caracteres")
         
         return transcript
         
