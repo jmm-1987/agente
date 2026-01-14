@@ -46,34 +46,8 @@ def preload_model():
                     logger.error(f"Error cargando modelo: {e3}")
                     sys.exit(1)
         
-        # Hacer una transcripción de prueba para asegurar que funciona
-        logger.info("Realizando transcripción de prueba...")
-        # Crear un archivo de audio silencioso temporal para prueba
-        import tempfile
-        import subprocess
-        
-        # Crear un archivo WAV silencioso de 1 segundo
-        test_wav = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
-        test_wav.close()
-        
-        try:
-            # Generar 1 segundo de silencio a 16kHz mono
-            subprocess.run([
-                'ffmpeg', '-f', 'lavfi', '-i', 'anullsrc=r=16000:cl=mono',
-                '-t', '1', '-y', test_wav.name
-            ], capture_output=True, timeout=10, check=False)
-            
-            # Intentar transcribir (aunque sea silencio)
-            segments, info = model.transcribe(test_wav.name, language="es")
-            # Consumir al menos un segmento para asegurar que funciona
-            list(segments)
-            logger.info("✅ Transcripción de prueba completada")
-        except Exception as e:
-            logger.warning(f"Transcripción de prueba falló (puede ser normal): {e}")
-        finally:
-            # Limpiar archivo temporal
-            if os.path.exists(test_wav.name):
-                os.unlink(test_wav.name)
+        # El modelo ya está cargado y cacheado, no necesitamos hacer prueba de transcripción
+        # El simple hecho de cargar el modelo asegura que esté descargado y disponible
         
         logger.info("✅ Pre-carga del modelo completada exitosamente")
         return True
