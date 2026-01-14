@@ -120,11 +120,11 @@ def webhook():
                     logger.info("[INIT] Inicializando Application...")
                     loop.run_until_complete(telegram_app.initialize())
                     logger.info("[INIT] Application.initialize() completado")
-                    loop.run_until_complete(telegram_app.start())
-                    logger.info("[INIT] Application.start() completado")
+                    # Para webhooks, NO llamamos a start() - solo initialize()
+                    # start() es solo para polling y causa errores con webhooks
                     telegram_initialized = True
-                    logger.info("[INIT] ✅ Application inicializado correctamente")
-                    # Mantener loop corriendo
+                    logger.info("[INIT] ✅ Application inicializado correctamente (modo webhook)")
+                    # Mantener loop corriendo para procesar actualizaciones
                     loop.run_forever()
                 except Exception as e:
                     logger.error(f"[INIT] Error: {e}", exc_info=True)
