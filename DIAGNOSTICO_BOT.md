@@ -212,3 +212,4 @@ Si necesitas ayuda, proporciona:
 - Variables de entorno configuradas (sin valores sensibles)
 
 
+
