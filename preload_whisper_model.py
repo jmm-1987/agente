@@ -22,9 +22,9 @@ def preload_model():
             logger.error("faster-whisper no está instalado")
             sys.exit(1)
         
-        # Determinar device y compute_type
-        device = "cuda" if os.getenv("CUDA_VISIBLE_DEVICES") else "cpu"
-        compute_type = "float16" if device == "cuda" else "int8"
+        # Para Render free tier, usar siempre CPU con int8 para minimizar memoria
+        device = "cpu"
+        compute_type = "int8"
         
         logger.info(f"Cargando modelo con device={device}, compute_type={compute_type}")
         
