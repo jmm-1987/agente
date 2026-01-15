@@ -1,0 +1,97 @@
+<div class="task-card">
+    <div class="task-card-header">
+        <h3 class="task-card-title">{{ task.title }}</h3>
+        <span class="task-card-id">#{{ task.id }}</span>
+    </div>
+    
+    <div class="task-card-body">
+        {% if task.ampliacion %}
+        <div class="task-ampliacion" style="margin-bottom: 1rem; padding: 0.75rem; background: #f0f7ff; border-radius: 6px; border-left: 3px solid #4285F4;">
+            <strong style="color: #4285F4; font-size: 0.85rem;">📄 Ampliación:</strong>
+            <p style="margin: 0.5rem 0 0 0; color: #495057; font-size: 0.9rem; white-space: pre-wrap;">{{ task.ampliacion }}</p>
+        </div>
+        {% endif %}
+        
+        <div class="task-card-meta">
+            {% if task.client_id %}
+                {% set client = clients|selectattr('id', 'equalto', task.client_id)|first %}
+                {% if client %}
+                <span class="task-card-client">
+                    👤 {{ client.name }}
+                </span>
+                {% endif %}
+            {% elif task.client_name_raw %}
+                <span class="task-card-client">
+                    👤 {{ task.client_name_raw }} <small>(sin asociar)</small>
+                </span>
+            {% endif %}
+            
+            {% if task.task_date %}
+            <span class="task-card-date">
+                📅 {{ task.task_date|format_date }}
+            </span>
+            {% else %}
+            <span class="task-card-date" style="color: #6c757d; font-style: italic;">
+                📅 Sin fecha
+            </span>
+            {% endif %}
+            
+            <span class="task-card-user">
+                👤 {{ task.user_name or ('Usuario ' + task.user_id|string) }}
+            </span>
+        </div>
+        
+        {% if task.solution %}
+        <div class="task-solution" style="margin-top: 1rem; padding: 0.75rem; background: #f8f9fa; border-radius: 6px; border-left: 3px solid #1e3a5f;">
+            <strong style="color: #1e3a5f; font-size: 0.85rem;">💡 Solución:</strong>
+            <p style="margin: 0.5rem 0 0 0; color: #495057; font-size: 0.9rem; white-space: pre-wrap;">{{ task.solution }}</p>
+        </div>
+        {% endif %}
+    </div>
+    
+    <div class="task-card-footer">
+        <div class="task-card-actions">
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
+                <span class="priority-badge priority-{{ task.priority }}">
+                    {{ task.priority }}
+                </span>
+                <span class="status-badge status-{{ task.status }}">
+                    {{ task.status }}
+                </span>
+                {% if task.category %}
+                {% set category_names = {
+                    'administracion': '📋 Administración',
+                    'averias': '🔧 Averías',
+                    'clientes': '👤 Clientes',
+                    'servicios': '⚙️ Servicios'
+                } %}
+                <span class="category-badge category-{{ task.category }}">
+                    {{ category_names.get(task.category, task.category) }}
+                </span>
+                {% endif %}
+            </div>
+            <div class="action-buttons-row">
+                {% if task.images and task.images|length > 0 %}
+                <button type="button" class="btn-action-icon btn-images-icon" onclick="openTaskImages({{ task.id }}, {{ task.images|tojson|e }})" title="Ver imágenes adjuntas ({{ task.images|length }})">
+                    📎
+                </button>
+                {% endif %}
+                <button type="button" class="btn-action-icon btn-solution-icon" data-task-id="{{ task.id }}" data-task-title="{{ task.title|e }}" data-solution="{{ task.solution|tojson|e if task.solution else '' }}" onclick="openSolutionModalFromButton(this)" title="{% if task.solution %}Editar Solución{% else %}Añadir Solución{% endif %}">
+                    💡
+                </button>
+                <button type="button" class="btn-action-icon btn-google-calendar-icon" onclick="return false;" title="Añadir a Google Calendar">
+                    📅
+                </button>
+                {% if task.status == 'open' %}
+                <form method="POST" action="{{ url_for('complete_task', task_id=task.id) }}" style="display: inline;" onsubmit="return true;">
+                    <button type="submit" class="btn-action-icon btn-success-icon" title="Completar tarea">✅</button>
+                </form>
+                {% endif %}
+                <form method="POST" action="{{ url_for('delete_task', task_id=task.id) }}" style="display: inline;" onsubmit="return confirm('¿Eliminar esta tarea?');">
+                    <button type="submit" class="btn-action-icon btn-danger-icon" title="Eliminar tarea">🗑️</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+

@@ -37,6 +37,62 @@ def tojson_filter(value):
     """Convierte valor a JSON string seguro para JavaScript"""
     return json.dumps(value) if value is not None else 'null'
 
+@app.template_filter('format_date')
+def format_date_filter(value):
+    """Formatea fecha a dd/mm/yyyy"""
+    if not value:
+        return ''
+    try:
+        from datetime import datetime
+        # Intentar parsear diferentes formatos
+        if isinstance(value, str):
+            # Si tiene formato ISO con hora
+            if 'T' in value or ' ' in value:
+                try:
+                    dt = datetime.fromisoformat(value.replace('Z', '+00:00'))
+                    return dt.strftime('%d/%m/%Y')
+                except:
+                    try:
+                        dt = datetime.strptime(value[:10], '%Y-%m-%d')
+                        return dt.strftime('%d/%m/%Y')
+                    except:
+                        return value[:10] if len(value) >= 10 else value
+            else:
+                # Solo fecha
+                try:
+                    dt = datetime.strptime(value[:10], '%Y-%m-%d')
+                    return dt.strftime('%d/%m/%Y')
+                except:
+                    return value
+        elif isinstance(value, datetime):
+            return value.strftime('%d/%m/%Y')
+        return str(value)
+    except Exception:
+        return str(value) if value else ''
+
+@app.template_filter('date_weekday')
+def date_weekday_filter(value):
+    """Obtiene el día de la semana de una fecha"""
+    if not value:
+        return ''
+    try:
+        from datetime import datetime
+        if isinstance(value, str):
+            try:
+                dt = datetime.fromisoformat(value.replace('Z', '+00:00'))
+                return dt.strftime('%A')
+            except:
+                try:
+                    dt = datetime.strptime(value[:10], '%Y-%m-%d')
+                    return dt.strftime('%A')
+                except:
+                    return ''
+        elif isinstance(value, datetime):
+            return value.strftime('%A')
+        return ''
+    except Exception:
+        return ''
+
 # Inicializar bot de Telegram
 bot_handler = telegram_bot.TelegramBotHandler()
 telegram_app = None
@@ -50,6 +106,7 @@ if config.TELEGRAM_BOT_TOKEN:
     # Handlers
     telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, bot_handler.handle_text_message))
     telegram_app.add_handler(MessageHandler(filters.VOICE, bot_handler.handle_voice_message))
+    telegram_app.add_handler(MessageHandler(filters.PHOTO, bot_handler.handle_photo_message))
     telegram_app.add_handler(CallbackQueryHandler(bot_handler.handle_callback_query))
     
     # Comando /start
@@ -248,10 +305,12 @@ def tasks():
     """Vista de tareas"""
     from datetime import datetime
     
-    status = request.args.get('status', 'all')
+    status = request.args.get('status', 'open')  # Por defecto mostrar tareas abiertas
     priority = request.args.get('priority', 'all')
+    category = request.args.get('category', 'all')
     user_id = request.args.get('user_id', type=int)
     task_date = request.args.get('task_date', '')
+    view_mode = request.args.get('view_mode', 'list')
     
     db = database.db
     tasks_list = db.get_tasks()
@@ -261,6 +320,8 @@ def tasks():
         tasks_list = [t for t in tasks_list if t['status'] == status]
     if priority != 'all':
         tasks_list = [t for t in tasks_list if t['priority'] == priority]
+    if category != 'all':
+        tasks_list = [t for t in tasks_list if t.get('category') == category]
     if user_id:
         tasks_list = [t for t in tasks_list if t['user_id'] == user_id]
     if task_date:
@@ -297,15 +358,62 @@ def tasks():
         if user_id not in users:
             users[user_id] = task.get('user_name', f'Usuario {user_id}')
     
+    # Asegurar que current_status tenga un valor válido
+    if not status or status == '':
+        status = 'open'
+    
+    # Separar tareas con fecha y sin fecha
+    tasks_with_date = []
+    tasks_without_date = []
+    
+    for task in tasks_list:
+        if task.get('task_date'):
+            tasks_with_date.append(task)
+        else:
+            tasks_without_date.append(task)
+    
+    # Ordenar tareas con fecha por fecha más reciente primero (descendente)
+    tasks_with_date.sort(key=lambda x: x.get('task_date', '') or '', reverse=True)
+    
+    # Obtener imágenes para cada tarea
+    for task in tasks_with_date:
+        task['images'] = db.get_task_images(task['id'])
+    for task in tasks_without_date:
+        task['images'] = db.get_task_images(task['id'])
+    
+    # Para vista de calendario, organizar tareas por día de la semana
+    tasks_by_weekday = {}
+    if view_mode == 'calendar':
+        for task in tasks_with_date:
+            try:
+                task_dt = datetime.fromisoformat(task['task_date'].replace('Z', '+00:00'))
+                weekday = task_dt.strftime('%A')  # Monday, Tuesday, etc.
+                if weekday not in tasks_by_weekday:
+                    tasks_by_weekday[weekday] = []
+                tasks_by_weekday[weekday].append(task)
+            except (ValueError, AttributeError):
+                try:
+                    task_dt = datetime.strptime(task['task_date'][:10], '%Y-%m-%d')
+                    weekday = task_dt.strftime('%A')
+                    if weekday not in tasks_by_weekday:
+                        tasks_by_weekday[weekday] = []
+                    tasks_by_weekday[weekday].append(task)
+                except (ValueError, AttributeError):
+                    pass
+    
     return render_template(
         'tasks.html',
-        tasks=tasks_list,
+        tasks_with_date=tasks_with_date,
+        tasks_without_date=tasks_without_date,
+        tasks_by_weekday=tasks_by_weekday,
         clients=clients,
         users=users,
         current_status=status,
         current_priority=priority,
+        current_category=category,
         current_user_id=user_id,
-        current_task_date=task_date
+        current_task_date=task_date,
+        view_mode=view_mode
     )
 
 
@@ -387,6 +495,31 @@ def update_task_solution(task_id):
     db = database.db
     db.update_task(task_id, solution=solution if solution else None)
     return redirect(url_for('tasks'))
+
+
+@app.route('/admin/tasks/<int:task_id>/images/<int:image_id>')
+@login_required
+def get_task_image(task_id, image_id):
+    """Sirve una imagen de una tarea"""
+    from flask import send_file
+    import os
+    
+    db = database.db
+    images = db.get_task_images(task_id)
+    
+    # Buscar la imagen específica
+    image = next((img for img in images if img['id'] == image_id), None)
+    
+    if not image or not image.get('file_path'):
+        return jsonify({'error': 'Imagen no encontrada'}), 404
+    
+    file_path = image['file_path']
+    
+    # Verificar que el archivo existe
+    if not os.path.exists(file_path):
+        return jsonify({'error': 'Archivo no encontrado'}), 404
+    
+    return send_file(file_path, mimetype='image/jpeg')
 
 
 # ========== API JSON ==========

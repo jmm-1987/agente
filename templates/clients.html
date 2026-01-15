@@ -45,12 +45,22 @@
                         -
                     {% endif %}
                 </td>
-                <td>{{ client.created_at[:10] }}</td>
+                <td>{{ client.created_at|format_date }}</td>
                 <td>
-                    <button onclick="editClient({{ client.id }}, '{{ client.name }}', '{{ client.aliases or '' }}')" class="btn btn-small btn-secondary">Editar</button>
-                    <form method="POST" action="{{ url_for('delete_client', client_id=client.id) }}" style="display: inline;" onsubmit="return confirm('¿Eliminar este cliente?');">
-                        <button type="submit" class="btn btn-small btn-danger">Eliminar</button>
-                    </form>
+                    <div class="dropdown-actions">
+                        <button type="button" class="btn btn-small btn-primary dropdown-toggle" onclick="toggleClientActionsDropdown({{ client.id }})">
+                            ⚙️ Acciones
+                            <span class="dropdown-arrow">▼</span>
+                        </button>
+                        <div id="client-actions-dropdown-{{ client.id }}" class="dropdown-menu">
+                            <button type="button" class="dropdown-item btn-secondary" onclick="editClient({{ client.id }}, '{{ client.name }}', '{{ client.aliases or '' }}'); closeClientActionsDropdown({{ client.id }});">
+                                ✏️ Editar
+                            </button>
+                            <form method="POST" action="{{ url_for('delete_client', client_id=client.id) }}" style="display: block;" onsubmit="closeClientActionsDropdown({{ client.id }}); return confirm('¿Eliminar este cliente?');">
+                                <button type="submit" class="dropdown-item btn-danger">🗑️ Eliminar</button>
+                            </form>
+                        </div>
+                    </div>
                 </td>
             </tr>
             {% endfor %}
@@ -91,6 +101,36 @@ function editClient(id, name, aliases) {
 
 function closeEditModal() {
     document.getElementById('editModal').style.display = 'none';
+}
+
+// Funciones para manejar el dropdown de acciones de clientes
+function toggleClientActionsDropdown(clientId) {
+    const dropdown = document.getElementById('client-actions-dropdown-' + clientId);
+    const isOpen = dropdown.classList.contains('show');
+    
+    // Cerrar todos los demás dropdowns
+    document.querySelectorAll('.dropdown-menu').forEach(d => {
+        d.classList.remove('show');
+    });
+    
+    // Abrir/cerrar el dropdown actual
+    if (!isOpen) {
+        dropdown.classList.add('show');
+    }
+}
+
+function closeClientActionsDropdown(clientId) {
+    const dropdown = document.getElementById('client-actions-dropdown-' + clientId);
+    dropdown.classList.remove('show');
+}
+
+// Cerrar dropdowns al hacer clic fuera
+window.onclick = function(event) {
+    if (!event.target.closest('.dropdown-actions')) {
+        document.querySelectorAll('.dropdown-menu').forEach(dropdown => {
+            dropdown.classList.remove('show');
+        });
+    }
 }
 </script>
 {% endblock %}

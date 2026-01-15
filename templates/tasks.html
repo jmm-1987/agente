@@ -7,15 +7,20 @@
 
 <div class="filters">
     <form method="GET" action="{{ url_for('tasks') }}" class="filter-form">
+        <select name="view_mode" id="view_mode" onchange="changeView(this.value)">
+            <option value="list" {% if view_mode != 'calendar' %}selected{% endif %}>📋 Lista</option>
+            <option value="calendar" {% if view_mode == 'calendar' %}selected{% endif %}>📅 Semana</option>
+        </select>
+        
         <select name="status">
-            <option value="all" {% if current_status == 'all' %}selected{% endif %}>📊 Todos los estados</option>
-            <option value="open" {% if current_status == 'open' %}selected{% endif %}>🟦 Abiertas</option>
+            <option value="all" {% if current_status == 'all' %}selected{% endif %}>📊 Todos</option>
+            <option value="open" {% if current_status == 'open' or current_status == '' %}selected{% endif %}>🟦 Abiertas</option>
             <option value="completed" {% if current_status == 'completed' %}selected{% endif %}>✅ Completadas</option>
             <option value="cancelled" {% if current_status == 'cancelled' %}selected{% endif %}>❌ Canceladas</option>
         </select>
         
         <select name="priority">
-            <option value="all" {% if current_priority == 'all' %}selected{% endif %}>⚡ Todas las prioridades</option>
+            <option value="all" {% if current_priority == 'all' %}selected{% endif %}>⚡ Todas</option>
             <option value="urgent" {% if current_priority == 'urgent' %}selected{% endif %}>🔴 Urgente</option>
             <option value="high" {% if current_priority == 'high' %}selected{% endif %}>🟠 Alta</option>
             <option value="normal" {% if current_priority == 'normal' %}selected{% endif %}>🟡 Normal</option>
@@ -33,108 +38,132 @@
         
         <input type="date" name="task_date" value="{{ current_task_date }}" placeholder="Fecha de tarea" style="padding: 0.4rem 0.7rem; border: 1.5px solid #e0e0e0; border-radius: 6px; font-size: 0.85rem; background: white; cursor: pointer;">
         
+        <select name="category">
+            <option value="all" {% if current_category == 'all' or not current_category %}selected{% endif %}>📂 Todas las categorías</option>
+            <option value="administracion" {% if current_category == 'administracion' %}selected{% endif %}>📋 Administración</option>
+            <option value="averias" {% if current_category == 'averias' %}selected{% endif %}>🔧 Averías</option>
+            <option value="clientes" {% if current_category == 'clientes' %}selected{% endif %}>👤 Clientes</option>
+            <option value="servicios" {% if current_category == 'servicios' %}selected{% endif %}>⚙️ Servicios</option>
+        </select>
+        
         <button type="submit" class="btn btn-primary">🔍 Filtrar</button>
         <a href="{{ url_for('tasks') }}" class="btn btn-secondary">🔄 Limpiar</a>
+        <a href="{{ url_for('logout') }}" class="logout-btn" title="Cerrar sesión">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M18 6L6 18M6 6l12 12"/>
+            </svg>
+        </a>
     </form>
 </div>
 
 <div class="tasks-list">
-    {% if tasks %}
-    <div class="tasks-grid">
-        {% for task in tasks %}
-        <div class="task-card">
-            <div class="task-card-header">
-                <h3 class="task-card-title">{{ task.title }}</h3>
-                <span class="task-card-id">#{{ task.id }}</span>
-            </div>
-            
-            <div class="task-card-body">
-                {% if task.ampliacion %}
-                <div class="task-ampliacion" style="margin-bottom: 1rem; padding: 0.75rem; background: #f0f7ff; border-radius: 6px; border-left: 3px solid #4285F4;">
-                    <strong style="color: #4285F4; font-size: 0.85rem;">📄 Ampliación:</strong>
-                    <p style="margin: 0.5rem 0 0 0; color: #495057; font-size: 0.9rem; white-space: pre-wrap;">{{ task.ampliacion }}</p>
-                </div>
-                {% endif %}
-                
-                <div class="task-card-meta">
-                    {% if task.client_id %}
-                        {% set client = clients|selectattr('id', 'equalto', task.client_id)|first %}
-                        {% if client %}
-                        <span class="task-card-client">
-                            👤 {{ client.name }}
-                        </span>
-                        {% endif %}
-                    {% elif task.client_name_raw %}
-                        <span class="task-card-client">
-                            👤 {{ task.client_name_raw }} <small>(sin asociar)</small>
-                        </span>
-                    {% endif %}
-                    
-                    {% if task.task_date %}
-                    <span class="task-card-date">
-                        📅 {{ task.task_date[:10] }}
-                    </span>
-                    {% endif %}
-                    
-                    <span class="task-card-user">
-                        👤 {{ task.user_name or ('Usuario ' + task.user_id|string) }}
-                    </span>
-                </div>
-                
-                <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.5rem;">
-                    <span class="priority-badge priority-{{ task.priority }}">
-                        {{ task.priority }}
-                    </span>
-                    <span class="status-badge status-{{ task.status }}">
-                        {{ task.status }}
-                    </span>
-                </div>
-                
-                {% if task.solution %}
-                <div class="task-solution" style="margin-top: 1rem; padding: 0.75rem; background: #f8f9fa; border-radius: 6px; border-left: 3px solid #1e3a5f;">
-                    <strong style="color: #1e3a5f; font-size: 0.85rem;">💡 Solución:</strong>
-                    <p style="margin: 0.5rem 0 0 0; color: #495057; font-size: 0.9rem; white-space: pre-wrap;">{{ task.solution }}</p>
-                </div>
-                {% endif %}
-            </div>
-            
-            <div class="task-card-footer">
-                <div class="task-card-actions">
-                    <button type="button" class="btn btn-small btn-solution" data-task-id="{{ task.id }}" data-task-title="{{ task.title|e }}" data-solution="{{ task.solution|tojson|e if task.solution else '' }}" onclick="openSolutionModalFromButton(this)" title="Añadir/Editar solución">
-                        💡 {% if task.solution %}Editar{% else %}Añadir{% endif %} Solución
-                    </button>
-                    <button type="button" class="btn btn-small btn-google-calendar" onclick="return false;" title="Añadir a Google Calendar">
-                        <svg width="18" height="18" viewBox="0 0 24 24" style="vertical-align: middle; margin-right: 4px;">
-                            <path fill="#4285F4" d="M19 4h-1V2h-2v2H8V2H6v2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 16H5V10h14v10zm0-12H5V6h14v2z"/>
-                            <circle fill="#EA4335" cx="8" cy="13" r="1"/>
-                            <circle fill="#EA4335" cx="12" cy="13" r="1"/>
-                            <circle fill="#EA4335" cx="16" cy="13" r="1"/>
-                            <circle fill="#EA4335" cx="8" cy="17" r="1"/>
-                            <circle fill="#EA4335" cx="12" cy="17" r="1"/>
-                            <circle fill="#EA4335" cx="16" cy="17" r="1"/>
-                        </svg>
-                        Añadir a Google Calendar
-                    </button>
-                    {% if task.status == 'open' %}
-                    <form method="POST" action="{{ url_for('complete_task', task_id=task.id) }}" style="display: inline;">
-                        <button type="submit" class="btn btn-small btn-success">✅ Completar</button>
-                    </form>
-                    {% endif %}
-                    <form method="POST" action="{{ url_for('delete_task', task_id=task.id) }}" style="display: inline;" onsubmit="return confirm('¿Eliminar esta tarea?');">
-                        <button type="submit" class="btn btn-small btn-danger">🗑️ Eliminar</button>
-                    </form>
-                </div>
-            </div>
+    <!-- Slider para tareas sin fecha (siempre visible) -->
+    {% if tasks_without_date %}
+    <div class="no-date-section" style="margin-bottom: 2rem;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
+            <h3 style="color: white; margin: 0; font-size: 1.2rem; font-weight: 600;">📋 Tareas sin fecha</h3>
+            <button type="button" class="toggle-section-btn" onclick="toggleNoDateSection()" id="toggleNoDateBtn" title="Mostrar/Ocultar tareas sin fecha">
+                <svg id="toggleNoDateIcon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" style="transition: transform 0.3s ease;">
+                    <path d="M6 9l6 6 6-6"/>
+                </svg>
+            </button>
         </div>
-        {% endfor %}
+        <div class="tasks-slider" id="noDateSlider" style="display: block;">
+            <div class="slider-container">
+                <div class="slider-track">
+                    {% for task in tasks_without_date %}
+                    <div class="task-card-slide">
+                        {% include 'task_card.html' %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            <button class="slider-btn slider-btn-prev" onclick="scrollSlider(this, 'prev')">‹</button>
+            <button class="slider-btn slider-btn-next" onclick="scrollSlider(this, 'next')">›</button>
+        </div>
+    </div>
+    <div id="noDateDivider" style="border-bottom: 2px solid rgba(255, 255, 255, 0.2); margin: 2rem 0; width: 100%;"></div>
+    {% endif %}
+    
+    {% if view_mode == 'calendar' %}
+    <!-- Vista de calendario semanal -->
+    <div class="calendar-view">
+        <div class="weekly-calendar">
+            {% set week_days = [
+                ('Lunes', 'Monday'),
+                ('Martes', 'Tuesday'),
+                ('Miércoles', 'Wednesday'),
+                ('Jueves', 'Thursday'),
+                ('Viernes', 'Friday'),
+                ('Sábado', 'Saturday'),
+                ('Domingo', 'Sunday')
+            ] %}
+            {% for day_name, day_key in week_days %}
+            <div class="calendar-day">
+                <div class="calendar-day-header">
+                    <h4>{{ day_name }}</h4>
+                </div>
+                <div class="calendar-day-tasks">
+                    {% for task in tasks_with_date %}
+                        {% if task.task_date %}
+                            {% set task_weekday = task.task_date|date_weekday %}
+                            {% if task_weekday == day_key %}
+                                <div class="calendar-task-item">
+                                    <div class="calendar-task-title">{{ task.title }}</div>
+                                    <div class="calendar-task-meta">
+                                        <span class="priority-badge priority-{{ task.priority }}">{{ task.priority }}</span>
+                                        {% if task.category %}
+                                        {% set category_names = {
+                                            'administracion': '📋',
+                                            'averias': '🔧',
+                                            'clientes': '👤',
+                                            'servicios': '⚙️'
+                                        } %}
+                                        <span class="category-badge category-{{ task.category }}">{{ category_names.get(task.category, '') }}</span>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            {% endif %}
+                        {% endif %}
+                    {% endfor %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
     </div>
     {% else %}
+    <!-- Vista de lista -->
+    <!-- Grid para tareas con fecha -->
+    {% if tasks_with_date %}
+    <div class="with-date-section">
+        <h3 style="color: white; margin-bottom: 1rem; font-size: 1.3rem; font-weight: 600;">📅 Tareas con fecha</h3>
+        <div class="tasks-grid">
+            {% for task in tasks_with_date %}
+                {% include 'task_card.html' %}
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+    
+    {% if not tasks_with_date and not tasks_without_date %}
     <div class="empty-state">
         <div class="empty-state-icon">📭</div>
         <h3>No hay tareas</h3>
         <p>No se encontraron tareas con los filtros seleccionados.</p>
     </div>
     {% endif %}
+    {% endif %}
+</div>
+
+<!-- Modal para imágenes -->
+<div id="imagesModal" class="modal" style="display: none;">
+    <div class="modal-content" style="max-width: 90%; max-height: 90vh;">
+        <span class="close" onclick="closeImagesModal()">&times;</span>
+        <h3 style="margin-top: 0;">📷 Imágenes adjuntas</h3>
+        <div id="imagesContainer" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem; margin-top: 1rem; max-height: 70vh; overflow-y: auto;">
+            <!-- Las imágenes se cargarán aquí -->
+        </div>
+    </div>
 </div>
 
 <!-- Modal para solución -->
@@ -200,6 +229,138 @@ window.onclick = function(event) {
     const modal = document.getElementById('solutionModal');
     if (event.target == modal) {
         closeSolutionModal();
+    }
+    
+    // Cerrar dropdowns de acciones al hacer clic fuera
+    if (!event.target.closest('.dropdown-actions')) {
+        document.querySelectorAll('.dropdown-menu').forEach(dropdown => {
+            dropdown.classList.remove('show');
+        });
+    }
+}
+
+// Funciones para el slider de tareas sin fecha
+function scrollSlider(button, direction) {
+    const slider = button.closest('.tasks-slider');
+    if (!slider) return;
+    
+    const sliderTrack = slider.querySelector('.slider-track');
+    if (!sliderTrack) return;
+    
+    const firstSlide = sliderTrack.querySelector('.task-card-slide');
+    if (!firstSlide) return;
+    
+    const slideWidth = firstSlide.offsetWidth + 16; // 16px de gap (1rem)
+    const scrollAmount = direction === 'next' ? slideWidth : -slideWidth;
+    
+    sliderTrack.scrollBy({
+        left: scrollAmount,
+        behavior: 'smooth'
+    });
+}
+
+// Funciones de acciones eliminadas - ahora los botones están directamente visibles
+
+function changeView(viewMode) {
+    const url = new URL(window.location.href);
+    url.searchParams.set('view_mode', viewMode);
+    window.location.href = url.toString();
+}
+
+function toggleNoDateSection() {
+    const slider = document.getElementById('noDateSlider');
+    const icon = document.getElementById('toggleNoDateIcon');
+    const divider = document.getElementById('noDateDivider');
+    
+    if (slider.style.display === 'none') {
+        slider.style.display = 'block';
+        icon.style.transform = 'rotate(0deg)';
+        if (divider) divider.style.display = 'block';
+    } else {
+        slider.style.display = 'none';
+        icon.style.transform = 'rotate(180deg)';
+        if (divider) divider.style.display = 'none';
+    }
+}
+
+function openTaskImages(taskId, imagesJson) {
+    const modal = document.getElementById('imagesModal');
+    const container = document.getElementById('imagesContainer');
+    
+    // Parsear JSON si es string
+    let images;
+    if (typeof imagesJson === 'string') {
+        try {
+            images = JSON.parse(imagesJson);
+        } catch (e) {
+            console.error('Error parsing images JSON:', e);
+            images = [];
+        }
+    } else {
+        images = imagesJson;
+    }
+    
+    // Limpiar contenedor
+    container.innerHTML = '';
+    
+    if (!images || images.length === 0) {
+        container.innerHTML = '<p style="text-align: center; color: #6c757d; padding: 2rem;">No hay imágenes disponibles.</p>';
+        modal.style.display = 'flex';
+        return;
+    }
+    
+    // Crear elementos de imagen
+    images.forEach(image => {
+        const imageDiv = document.createElement('div');
+        imageDiv.style.cssText = 'position: relative; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1); cursor: pointer; transition: transform 0.2s ease;';
+        imageDiv.onmouseenter = function() {
+            this.style.transform = 'scale(1.05)';
+        };
+        imageDiv.onmouseleave = function() {
+            this.style.transform = 'scale(1)';
+        };
+        
+        const img = document.createElement('img');
+        img.src = `/admin/tasks/${taskId}/images/${image.id}`;
+        img.style.cssText = 'width: 100%; height: 200px; object-fit: cover; display: block;';
+        img.onerror = function() {
+            this.style.display = 'none';
+            imageDiv.innerHTML = '<div style="width: 100%; height: 200px; display: flex; align-items: center; justify-content: center; background: #f8f9fa; color: #6c757d;">Imagen no disponible</div>';
+        };
+        img.onclick = function(e) {
+            e.stopPropagation();
+            window.open(img.src, '_blank');
+        };
+        
+        imageDiv.appendChild(img);
+        container.appendChild(imageDiv);
+    });
+    
+    modal.style.display = 'flex';
+}
+
+function closeImagesModal() {
+    document.getElementById('imagesModal').style.display = 'none';
+}
+
+// Cerrar modal de imágenes al hacer clic fuera
+window.onclick = function(event) {
+    const solutionModal = document.getElementById('solutionModal');
+    const imagesModal = document.getElementById('imagesModal');
+    
+    if (event.target == solutionModal) {
+        closeSolutionModal();
+    }
+    
+    if (event.target == imagesModal) {
+        closeImagesModal();
+    }
+    
+    // Cerrar dropdowns de acciones al hacer clic fuera
+    if (!event.target.closest('.dropdown-actions')) {
+        document.querySelectorAll('.dropdown-menu').forEach(dropdown => {
+            dropdown.classList.remove('show');
+        });
     }
 }
 </script>

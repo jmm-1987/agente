@@ -17,6 +17,7 @@ class TelegramBotHandler:
         self.db = database.db
         self.parser = parser.IntentParser()
         # Estado de usuarios: {user_id: {'action': 'ampliar_task', 'task_id': int}}
+        # O también: {user_id: {'action': 'waiting_category', 'parsed': dict}}
         self.user_states = {}
     
     def _get_action_buttons(self) -> InlineKeyboardMarkup:
@@ -197,6 +198,12 @@ class TelegramBotHandler:
                 del self.user_states[user.id]
                 return
             
+            # Verificar si el usuario está esperando categoría
+            if user_state and user_state.get('action') == 'waiting_category':
+                # Procesar respuesta de categoría
+                await self._handle_category_response(update, context, transcript, user)
+                return
+            
             # Parsear intención y entidades
             parsed = self.parser.parse(transcript)
             
@@ -265,7 +272,7 @@ class TelegramBotHandler:
     
     async def _handle_create_task(self, update: Update, context: ContextTypes.DEFAULT_TYPE,
                                  parsed: dict, user):
-        """Maneja creación de tarea"""
+        """Maneja creación de tarea - primero pregunta por categoría"""
         entities = parsed['entities']
         title = entities.get('title', parsed['original_text'])
         priority = entities.get('priority', 'normal')
@@ -292,20 +299,135 @@ class TelegramBotHandler:
                 await self._offer_create_client(update, context, client_name_raw, parsed, user)
                 return
         
+        # Guardar estado y preguntar por categoría
+        self.user_states[user.id] = {
+            'action': 'waiting_category',
+            'parsed': parsed,
+            'title': title,
+            'priority': priority,
+            'task_date': task_date,
+            'client_id': client_id,
+            'client_name_raw': client_name_raw
+        }
+        
+        # Preguntar por categoría con botones
+        await self._ask_category(update, context)
+    
+    async def _ask_category(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Pregunta por la categoría de la tarea"""
+        keyboard = [
+            [
+                InlineKeyboardButton("📋 Administración", callback_data="category:administracion"),
+                InlineKeyboardButton("🔧 Averías", callback_data="category:averias")
+            ],
+            [
+                InlineKeyboardButton("👤 Clientes", callback_data="category:clientes"),
+                InlineKeyboardButton("⚙️ Servicios", callback_data="category:servicios")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        reply_keyboard = self._get_reply_keyboard()
+        
+        if hasattr(update, 'message') and update.message:
+            await update.message.reply_text(
+                "📂 ¿A qué categoría pertenece esta tarea?",
+                reply_markup=reply_markup
+            )
+        elif context and hasattr(context, 'message'):
+            await context.message.reply_text(
+                "📂 ¿A qué categoría pertenece esta tarea?",
+                reply_markup=reply_markup
+            )
+        else:
+            if hasattr(update, 'effective_message'):
+                await update.effective_message.reply_text(
+                    "📂 ¿A qué categoría pertenece esta tarea?",
+                    reply_markup=reply_markup
+                )
+    
+    async def _handle_category_response(self, update: Update, context: ContextTypes.DEFAULT_TYPE,
+                                       transcript: str, user):
+        """Maneja la respuesta de categoría desde texto o callback"""
+        user_state = self.user_states.get(user.id)
+        if not user_state or user_state.get('action') != 'waiting_category':
+            return
+        
+        # Mapear texto a categoría
+        transcript_lower = transcript.lower().strip()
+        category_map = {
+            'administracion': 'administracion',
+            'administración': 'administracion',
+            'admin': 'administracion',
+            'averias': 'averias',
+            'averías': 'averias',
+            'averia': 'averias',
+            'avería': 'averias',
+            'clientes': 'clientes',
+            'cliente': 'clientes',
+            'servicios': 'servicios',
+            'servicio': 'servicios'
+        }
+        
+        category = None
+        for key, value in category_map.items():
+            if key in transcript_lower:
+                category = value
+                break
+        
+        if not category:
+            await update.message.reply_text(
+                "❓ No entendí la categoría. Por favor, selecciona una de las opciones disponibles.",
+                reply_markup=self._get_reply_keyboard()
+            )
+            await self._ask_category(update, context)
+            return
+        
+        # Crear tarea con categoría
+        await self._create_task_with_category(update, context, user, category, user_state)
+    
+    async def _create_task_with_category(self, update: Update, context: ContextTypes.DEFAULT_TYPE,
+                                         user, category: str, user_state: dict):
+        """Crea la tarea con la categoría seleccionada"""
         # Crear tarea
         task_id = self.db.create_task(
             user_id=user.id,
             user_name=user.full_name or user.username,
-            title=title,
-            description=parsed['original_text'],
-            priority=priority,
-            task_date=task_date,
-            client_id=client_id,
-            client_name_raw=client_name_raw
+            title=user_state['title'],
+            description=user_state['parsed']['original_text'],
+            priority=user_state['priority'],
+            task_date=user_state['task_date'],
+            client_id=user_state['client_id'],
+            client_name_raw=user_state['client_name_raw'],
+            category=category
         )
         
-        # Responder con confirmación y botones
-        await self._send_task_confirmation(update, context, task_id, user)
+        # Limpiar estado
+        del self.user_states[user.id]
+        
+        # Si es callback query, editar mensaje primero y luego enviar confirmación
+        if hasattr(update, 'callback_query') and update.callback_query:
+            category_names = {
+                'administracion': '📋 Administración',
+                'averias': '🔧 Averías',
+                'clientes': '👤 Clientes',
+                'servicios': '⚙️ Servicios'
+            }
+            await update.callback_query.edit_message_text(
+                f"✅ Categoría seleccionada: {category_names.get(category, category)}"
+            )
+            # Crear un objeto Update simulado para usar _send_task_confirmation
+            class FakeUpdate:
+                def __init__(self, message):
+                    self.message = message
+                    self.effective_message = message
+                    self.effective_user = message.from_user
+            
+            fake_update = FakeUpdate(update.callback_query.message)
+            await self._send_task_confirmation(fake_update, context, task_id, user)
+        else:
+            # Responder con confirmación y botones
+            await self._send_task_confirmation(update, context, task_id, user)
     
     async def _ask_client_confirmation(self, update: Update, context: ContextTypes.DEFAULT_TYPE,
                                       client_match: dict, parsed: dict, user):
@@ -383,11 +505,22 @@ class TelegramBotHandler:
             'low': '🟢'
         }.get(task['priority'], '🟡')
         
+        category_info = ""
+        if task.get('category'):
+            category_names = {
+                'administracion': '📋 Administración',
+                'averias': '🔧 Averías',
+                'clientes': '👤 Clientes',
+                'servicios': '⚙️ Servicios'
+            }
+            category_info = f"\n📂 Categoría: {category_names.get(task['category'], task['category'])}"
+        
         message = (
             f"✅ Tarea creada:\n\n"
             f"📝 {task['title']}"
             f"{client_info}"
             f"{date_info}"
+            f"{category_info}"
             f"\n{priority_emoji} Prioridad: {task['priority']}"
         )
         
@@ -754,70 +887,137 @@ class TelegramBotHandler:
                 )
             else:
                 await query.edit_message_text("❌ Tarea no encontrada.", reply_markup=self._get_action_buttons())
+        
+        elif action == 'category':
+            category = parts[1]
+            user = update.effective_user
+            user_state = self.user_states.get(user.id)
+            
+            if user_state and user_state.get('action') == 'waiting_category':
+                # Crear un objeto Update simulado para pasar al método
+                class FakeUpdate:
+                    def __init__(self, callback_query):
+                        self.callback_query = callback_query
+                        self.effective_user = callback_query.from_user
+                        self.effective_message = callback_query.message
+                
+                fake_update = FakeUpdate(query)
+                await self._create_task_with_category(fake_update, context, user, category, user_state)
+            else:
+                await query.edit_message_text("❌ Error: Estado no válido.")
+        
+        elif action == 'assign_image_to_task':
+            task_id = int(parts[1])
+            user = update.effective_user
+            user_state = self.user_states.get(user.id)
+            
+            if user_state and user_state.get('action') == 'waiting_task_for_image':
+                # Asignar imagen directamente usando el file_id guardado
+                photo_file_id = user_state.get('photo_file_id')
+                photo_file_unique_id = user_state.get('photo_file_unique_id')
+                
+                if not photo_file_id:
+                    await query.edit_message_text("❌ Error: No se encontró la imagen.")
+                    if user.id in self.user_states:
+                        del self.user_states[user.id]
+                    return
+                
+                # Crear un objeto Photo simulado para pasar al método
+                class PhotoFile:
+                    def __init__(self, file_id, file_unique_id):
+                        self.file_id = file_id
+                        self.file_unique_id = file_unique_id
+                
+                photo_file = PhotoFile(photo_file_id, photo_file_unique_id)
+                
+                # Asignar imagen a la tarea
+                await self._assign_image_to_task_from_callback(query, update, context, task_id, photo_file, user)
+            else:
+                await query.edit_message_text("❌ Error: Estado no válido.")
     
     async def _create_task_with_client(self, query, update, client_id: int, original_text: str):
-        """Crea tarea con cliente confirmado"""
+        """Crea tarea con cliente confirmado - primero pregunta por categoría"""
         parsed = self.parser.parse(original_text)
         entities = parsed['entities']
         
-        task_id = self.db.create_task(
-            user_id=update.effective_user.id,
-            user_name=update.effective_user.full_name or update.effective_user.username,
-            title=entities.get('title', original_text),
-            description=original_text,
-            priority=entities.get('priority', 'normal'),
-            task_date=entities.get('date'),
-            client_id=client_id,
-            client_name_raw=None
-        )
+        # Guardar estado y preguntar por categoría
+        user = update.effective_user
+        self.user_states[user.id] = {
+            'action': 'waiting_category',
+            'parsed': parsed,
+            'title': entities.get('title', original_text),
+            'priority': entities.get('priority', 'normal'),
+            'task_date': entities.get('date'),
+            'client_id': client_id,
+            'client_name_raw': None
+        }
         
-        await self._send_task_confirmation_new_message(query.message, task_id, update.effective_user)
-        await query.edit_message_text("✅ Cliente confirmado. Tarea creada.")
+        await query.edit_message_text("✅ Cliente confirmado.")
+        await self._ask_category_from_message(query.message, update)
+    
+    async def _ask_category_from_message(self, message, update):
+        """Pregunta por categoría desde un mensaje"""
+        keyboard = [
+            [
+                InlineKeyboardButton("📋 Administración", callback_data="category:administracion"),
+                InlineKeyboardButton("🔧 Averías", callback_data="category:averias")
+            ],
+            [
+                InlineKeyboardButton("👤 Clientes", callback_data="category:clientes"),
+                InlineKeyboardButton("⚙️ Servicios", callback_data="category:servicios")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await message.reply_text(
+            "📂 ¿A qué categoría pertenece esta tarea?",
+            reply_markup=reply_markup
+        )
     
     async def _create_new_client_and_task(self, query, update, client_name: str, original_text: str):
-        """Crea cliente nuevo y luego la tarea"""
+        """Crea cliente nuevo y luego pregunta por categoría"""
         try:
             client_id = self.db.create_client(client_name)
             await query.edit_message_text(f"✅ Cliente '{client_name}' creado.")
             
-            # Crear tarea
+            # Guardar estado y preguntar por categoría
             parsed = self.parser.parse(original_text)
             entities = parsed['entities']
+            user = update.effective_user
             
-            task_id = self.db.create_task(
-                user_id=update.effective_user.id,
-                user_name=update.effective_user.full_name or update.effective_user.username,
-                title=entities.get('title', original_text),
-                description=original_text,
-                priority=entities.get('priority', 'normal'),
-                task_date=entities.get('date'),
-                client_id=client_id,
-                client_name_raw=client_name
-            )
+            self.user_states[user.id] = {
+                'action': 'waiting_category',
+                'parsed': parsed,
+                'title': entities.get('title', original_text),
+                'priority': entities.get('priority', 'normal'),
+                'task_date': entities.get('date'),
+                'client_id': client_id,
+                'client_name_raw': client_name
+            }
             
-            await self._send_task_confirmation_new_message(query.message, task_id, update.effective_user)
+            await self._ask_category_from_message(query.message, update)
             
         except ValueError as e:
             await query.edit_message_text(f"❌ Error: {str(e)}")
     
     async def _create_task_without_client(self, query, update, original_text: str):
-        """Crea tarea sin cliente"""
+        """Crea tarea sin cliente - primero pregunta por categoría"""
         parsed = self.parser.parse(original_text)
         entities = parsed['entities']
+        user = update.effective_user
         
-        task_id = self.db.create_task(
-            user_id=update.effective_user.id,
-            user_name=update.effective_user.full_name or update.effective_user.username,
-            title=entities.get('title', original_text),
-            description=original_text,
-            priority=entities.get('priority', 'normal'),
-            task_date=entities.get('date'),
-            client_id=None,
-            client_name_raw=None
-        )
+        # Guardar estado y preguntar por categoría
+        self.user_states[user.id] = {
+            'action': 'waiting_category',
+            'parsed': parsed,
+            'title': entities.get('title', original_text),
+            'priority': entities.get('priority', 'normal'),
+            'task_date': entities.get('date'),
+            'client_id': None,
+            'client_name_raw': None
+        }
         
-        await self._send_task_confirmation_new_message(query.message, task_id, update.effective_user)
-        await query.edit_message_text("✅ Tarea creada sin cliente.")
+        await query.edit_message_text("✅ Continuando sin cliente.")
+        await self._ask_category_from_message(query.message, update)
     
     async def _create_calendar_event(self, query, update, task_id: int):
         """Crea evento en Google Calendar"""
@@ -1043,6 +1243,148 @@ class TelegramBotHandler:
             f"Tienes {len(tasks)} tarea(s).",
             reply_markup=inline_markup
         )
+    
+    async def handle_photo_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Procesa mensajes con fotos/imágenes"""
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"[HANDLER] handle_photo_message llamado para update {update.update_id}")
+        
+        user = update.effective_user
+        photo = update.message.photo
+        
+        reply_markup = self._get_reply_keyboard()
+        
+        if not photo:
+            await update.message.reply_text("❌ No se detectó imagen en el mensaje.", reply_markup=reply_markup)
+            return
+        
+        # Obtener la foto de mayor calidad (última en la lista)
+        photo_file = photo[-1]
+        
+        # Verificar si el usuario está esperando asignar imagen a una tarea
+        user_state = self.user_states.get(user.id)
+        if user_state and user_state.get('action') == 'assign_image_to_task':
+            # Asignar imagen a la tarea seleccionada
+            task_id = user_state.get('task_id')
+            await self._assign_image_to_task(update, context, task_id, photo_file, user)
+            # Limpiar estado
+            del self.user_states[user.id]
+            return
+        
+        # Si no hay estado, preguntar a qué tarea asignar la imagen
+        await self._ask_task_for_image(update, context, photo_file, user)
+    
+    async def _ask_task_for_image(self, update: Update, context: ContextTypes.DEFAULT_TYPE, 
+                                  photo_file, user):
+        """Pregunta a qué tarea asignar la imagen"""
+        # Obtener solo tareas abiertas del usuario
+        tasks = self.db.get_tasks(user_id=user.id, status='open', limit=20)
+        
+        if not tasks:
+            await update.message.reply_text(
+                "❌ No tienes tareas abiertas disponibles. Crea una tarea primero.",
+                reply_markup=self._get_reply_keyboard()
+            )
+            return
+        
+        # Guardar el file_id de la imagen en el estado
+        self.user_states[user.id] = {
+            'action': 'waiting_task_for_image',
+            'photo_file_id': photo_file.file_id,
+            'photo_file_unique_id': photo_file.file_unique_id
+        }
+        
+        # Crear botones con las tareas (solo abiertas)
+        keyboard = []
+        for task in tasks[:10]:  # Máximo 10 tareas
+            task_title = task['title'][:35] + "..." if len(task['title']) > 35 else task['title']
+            
+            keyboard.append([InlineKeyboardButton(
+                f"📝 {task_title}",
+                callback_data=f"assign_image_to_task:{task['id']}"
+            )])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(
+            "📷 Imagen recibida. ¿A qué tarea abierta quieres asignarla?",
+            reply_markup=reply_markup
+        )
+    
+    async def _assign_image_to_task(self, update: Update, context: ContextTypes.DEFAULT_TYPE,
+                                   task_id: int, photo_file, user):
+        """Asigna una imagen a una tarea"""
+        reply_markup = self._get_reply_keyboard()
+        
+        try:
+            # Descargar la imagen
+            file = await context.bot.get_file(photo_file.file_id)
+            
+            # Crear directorio para imágenes si no existe
+            images_dir = os.path.join(config.TEMP_DIR, 'task_images')
+            os.makedirs(images_dir, exist_ok=True)
+            
+            # Guardar imagen localmente
+            file_path = os.path.join(images_dir, f"{task_id}_{photo_file.file_unique_id}.jpg")
+            await file.download_to_drive(file_path)
+            
+            # Guardar en base de datos
+            self.db.add_image_to_task(task_id, photo_file.file_id, file_path)
+            
+            task = self.db.get_task_by_id(task_id)
+            task_title = task['title'] if task else f"Tarea #{task_id}"
+            
+            await update.message.reply_text(
+                f"✅ Imagen asignada a la tarea:\n\n"
+                f"📝 {task_title}",
+                reply_markup=reply_markup
+            )
+        except Exception as e:
+            import traceback
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error asignando imagen a tarea: {e}", exc_info=True)
+            await update.message.reply_text(
+                f"❌ Error al asignar imagen: {str(e)}",
+                reply_markup=reply_markup
+            )
+    
+    async def _assign_image_to_task_from_callback(self, query, update: Update, context: ContextTypes.DEFAULT_TYPE,
+                                                  task_id: int, photo_file, user):
+        """Asigna una imagen a una tarea desde un callback"""
+        try:
+            # Descargar la imagen
+            file = await context.bot.get_file(photo_file.file_id)
+            
+            # Crear directorio para imágenes si no existe
+            images_dir = os.path.join(config.TEMP_DIR, 'task_images')
+            os.makedirs(images_dir, exist_ok=True)
+            
+            # Guardar imagen localmente
+            file_path = os.path.join(images_dir, f"{task_id}_{photo_file.file_unique_id}.jpg")
+            await file.download_to_drive(file_path)
+            
+            # Guardar en base de datos
+            self.db.add_image_to_task(task_id, photo_file.file_id, file_path)
+            
+            task = self.db.get_task_by_id(task_id)
+            task_title = task['title'] if task else f"Tarea #{task_id}"
+            
+            # Limpiar estado
+            del self.user_states[user.id]
+            
+            await query.edit_message_text(
+                f"✅ Imagen asignada a la tarea:\n\n"
+                f"📝 {task_title}"
+            )
+        except Exception as e:
+            import traceback
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error asignando imagen a tarea: {e}", exc_info=True)
+            await query.edit_message_text(f"❌ Error al asignar imagen: {str(e)}")
+            if user.id in self.user_states:
+                del self.user_states[user.id]
     
     async def _add_ampliacion_to_task(self, update, task_id: int, ampliacion_text: str, user):
         """Añade ampliación a una tarea"""

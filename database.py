@@ -71,11 +71,31 @@ class Database:
             # La columna ya existe, ignorar
             pass
         
+        # Añadir columna 'category' si no existe (migración)
+        try:
+            cursor.execute('ALTER TABLE tasks ADD COLUMN category TEXT CHECK(category IN ("administracion", "averias", "clientes", "servicios"))')
+        except sqlite3.OperationalError:
+            # La columna ya existe, ignorar
+            pass
+        
+        # Tabla de imágenes adjuntas a tareas
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS task_images (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id INTEGER NOT NULL,
+                file_id TEXT NOT NULL,
+                file_path TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+            )
+        ''')
+        
         # Índices
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_tasks_client_id ON tasks(client_id)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_clients_normalized_name ON clients(normalized_name)')
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_task_images_task_id ON task_images(task_id)')
         
         conn.commit()
         conn.close()
@@ -183,7 +203,7 @@ class Database:
     def create_task(self, user_id: int, user_name: str, title: str,
                     description: str = None, priority: str = 'normal',
                     task_date: datetime = None, client_id: int = None,
-                    client_name_raw: str = None) -> int:
+                    client_name_raw: str = None, category: str = None) -> int:
         """Crea una nueva tarea"""
         conn = self.get_connection()
         cursor = conn.cursor()
@@ -193,11 +213,11 @@ class Database:
         cursor.execute('''
             INSERT INTO tasks (
                 user_id, user_name, title, description, priority,
-                task_date, client_id, client_name_raw
+                task_date, client_id, client_name_raw, category
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (user_id, user_name, title, description, priority,
-              task_date_str, client_id, client_name_raw))
+              task_date_str, client_id, client_name_raw, category))
         
         task_id = cursor.lastrowid
         conn.commit()
@@ -255,7 +275,7 @@ class Database:
         
         allowed_fields = ['title', 'description', 'status', 'priority',
                          'task_date', 'client_id', 'client_name_raw',
-                         'google_event_id', 'google_event_link', 'solution', 'ampliacion']
+                         'google_event_id', 'google_event_link', 'solution', 'ampliacion', 'category']
         
         updates = []
         params = []
@@ -305,6 +325,42 @@ class Database:
             client_id=client_id,
             limit=limit
         )
+    
+    # ========== IMÁGENES DE TAREAS ==========
+    
+    def add_image_to_task(self, task_id: int, file_id: str, file_path: str = None) -> int:
+        """Añade una imagen a una tarea"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            INSERT INTO task_images (task_id, file_id, file_path)
+            VALUES (?, ?, ?)
+        ''', (task_id, file_id, file_path))
+        
+        image_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        return image_id
+    
+    def get_task_images(self, task_id: int) -> List[Dict]:
+        """Obtiene todas las imágenes de una tarea"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM task_images WHERE task_id = ? ORDER BY created_at DESC', (task_id,))
+        rows = cursor.fetchall()
+        conn.close()
+        return [dict(row) for row in rows]
+    
+    def delete_task_image(self, image_id: int) -> bool:
+        """Elimina una imagen de una tarea"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        cursor.execute('DELETE FROM task_images WHERE id = ?', (image_id,))
+        conn.commit()
+        success = cursor.rowcount > 0
+        conn.close()
+        return success
 
 
 # Instancia global
