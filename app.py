@@ -220,7 +220,8 @@ def webhook():
         update_type = 'message' if update.message else 'callback_query' if update.callback_query else 'other'
         logger.info(f"[WEBHOOK] Recibida actualización {update.update_id}, tipo: {update_type}")
         
-        # Procesar actualización directamente usando process_update
+        # Procesar actualización usando el executor
+        # Usar un enfoque simple: crear un loop, procesar, y dejar que se cierre naturalmente
         def process_update_async():
             """Ejecuta process_update de forma asíncrona"""
             import asyncio
@@ -239,44 +240,16 @@ def webhook():
                     telegram_loop = loop
                     logger.info("[INIT] ✅ Application inicializado correctamente")
                 
-                # Procesar la actualización
+                # Procesar la actualización - esto puede iniciar operaciones HTTP asíncronas
                 loop.run_until_complete(telegram_app.process_update(update))
-                logger.info(f"[WEBHOOK] Actualización {update.update_id} procesada, esperando operaciones HTTP...")
+                logger.info(f"[WEBHOOK] Actualización {update.update_id} procesada")
                 
-                # Esperar a que todas las tareas asíncronas terminen (incluyendo respuestas HTTP)
-                # Esto es crítico porque process_update puede iniciar operaciones que continúan después
-                max_wait_time = 10.0  # Esperar hasta 10 segundos
-                wait_interval = 0.2
-                waited_time = 0.0
-                
-                while waited_time < max_wait_time:
-                    pending = [task for task in asyncio.all_tasks(loop) if not task.done()]
-                    if not pending:
-                        logger.info(f"[WEBHOOK] Todas las tareas completadas para update {update.update_id}")
-                        break
-                    
-                    # Esperar un poco y verificar de nuevo
-                    try:
-                        loop.run_until_complete(asyncio.sleep(wait_interval))
-                        waited_time += wait_interval
-                    except:
-                        break
-                
-                if waited_time >= max_wait_time:
-                    pending = [task for task in asyncio.all_tasks(loop) if not task.done()]
-                    if pending:
-                        logger.warning(f"[WEBHOOK] Timeout esperando tareas para update {update.update_id}, quedan {len(pending)} tareas pendientes")
-                
-                logger.info(f"[WEBHOOK] Actualización {update.update_id} completamente procesada")
+                # NO cerrar el loop aquí - las operaciones HTTP asíncronas necesitan que esté vivo
+                # El loop se cerrará cuando el thread termine, dando tiempo a las operaciones HTTP
                 
             except Exception as e:
                 logger.error(f"[WEBHOOK] Error procesando actualización {update.update_id}: {e}", exc_info=True)
-            finally:
-                # NO cerrar el loop - dejarlo abierto para que las tareas puedan terminar
-                # El loop se cerrará cuando el thread termine naturalmente
-                # Esto evita el error "Event loop is closed" mientras hay operaciones HTTP pendientes
-                # Si cerramos el loop aquí, las operaciones HTTP asíncronas fallarán
-                pass
+            # No cerrar el loop explícitamente - dejar que termine naturalmente con el thread
         
         executor.submit(process_update_async)
         
