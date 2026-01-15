@@ -159,6 +159,8 @@ def logout():
 @app.route('/webhook', methods=['POST'])
 def webhook():
     """Webhook para recibir actualizaciones de Telegram"""
+    global telegram_initialized, telegram_loop
+    
     if not telegram_app:
         logger.error("Webhook recibido pero bot no configurado")
         return jsonify({'error': 'Bot no configurado'}), 503
