@@ -241,50 +241,42 @@ def webhook():
                 
                 # Procesar la actualización
                 loop.run_until_complete(telegram_app.process_update(update))
-                logger.info(f"[WEBHOOK] Actualización {update.update_id} procesada correctamente")
+                logger.info(f"[WEBHOOK] Actualización {update.update_id} procesada, esperando operaciones HTTP...")
+                
+                # Esperar a que todas las tareas asíncronas terminen (incluyendo respuestas HTTP)
+                # Esto es crítico porque process_update puede iniciar operaciones que continúan después
+                max_wait_time = 10.0  # Esperar hasta 10 segundos
+                wait_interval = 0.2
+                waited_time = 0.0
+                
+                while waited_time < max_wait_time:
+                    pending = [task for task in asyncio.all_tasks(loop) if not task.done()]
+                    if not pending:
+                        logger.info(f"[WEBHOOK] Todas las tareas completadas para update {update.update_id}")
+                        break
+                    
+                    # Esperar un poco y verificar de nuevo
+                    try:
+                        loop.run_until_complete(asyncio.sleep(wait_interval))
+                        waited_time += wait_interval
+                    except:
+                        break
+                
+                if waited_time >= max_wait_time:
+                    pending = [task for task in asyncio.all_tasks(loop) if not task.done()]
+                    if pending:
+                        logger.warning(f"[WEBHOOK] Timeout esperando tareas para update {update.update_id}, quedan {len(pending)} tareas pendientes")
+                
+                logger.info(f"[WEBHOOK] Actualización {update.update_id} completamente procesada")
                 
             except Exception as e:
                 logger.error(f"[WEBHOOK] Error procesando actualización {update.update_id}: {e}", exc_info=True)
             finally:
-                # Esperar a que todas las tareas terminen antes de cerrar el loop
-                if loop and not loop.is_closed():
-                    try:
-                        # Obtener todas las tareas pendientes (excepto la tarea actual)
-                        pending = [task for task in asyncio.all_tasks(loop) if not task.done()]
-                        if pending:
-                            # Esperar a que terminen con un timeout razonable
-                            try:
-                                # Usar gather con return_exceptions para no fallar si alguna tarea falla
-                                loop.run_until_complete(asyncio.wait_for(
-                                    asyncio.gather(*pending, return_exceptions=True),
-                                    timeout=5.0  # Timeout de 5 segundos
-                                ))
-                            except asyncio.TimeoutError:
-                                logger.warning(f"[WEBHOOK] Algunas tareas no terminaron en 5 segundos, forzando cierre...")
-                                # Cancelar tareas pendientes
-                                for task in pending:
-                                    if not task.done():
-                                        task.cancel()
-                                # Esperar un poco más para que se cancelen
-                                try:
-                                    loop.run_until_complete(asyncio.wait_for(
-                                        asyncio.gather(*pending, return_exceptions=True),
-                                        timeout=1.0
-                                    ))
-                                except:
-                                    pass
-                    except Exception as cleanup_error:
-                        logger.warning(f"[WEBHOOK] Error en limpieza del loop: {cleanup_error}")
-                    finally:
-                        # Solo cerrar el loop si no es el loop principal compartido
-                        if loop != telegram_loop:
-                            try:
-                                # Dar un momento más para que cualquier operación pendiente termine
-                                import time
-                                time.sleep(0.1)
-                                loop.close()
-                            except Exception as close_error:
-                                logger.warning(f"[WEBHOOK] Error cerrando loop: {close_error}")
+                # NO cerrar el loop - dejarlo abierto para que las tareas puedan terminar
+                # El loop se cerrará cuando el thread termine naturalmente
+                # Esto evita el error "Event loop is closed" mientras hay operaciones HTTP pendientes
+                # Si cerramos el loop aquí, las operaciones HTTP asíncronas fallarán
+                pass
         
         executor.submit(process_update_async)
         
