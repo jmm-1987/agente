@@ -167,45 +167,35 @@ def webhook():
     if not telegram_initialized:
         logger.info("[WEBHOOK] Application no inicializado, inicializando ahora...")
         try:
-            # Inicializar en un thread separado
-            def init_app():
-                global telegram_initialized, telegram_loop
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                telegram_loop = loop  # Guardar referencia al loop
+            # Inicializar directamente en el thread actual para evitar problemas con loops
+            import asyncio
+            try:
+                # Intentar obtener el loop actual, si no existe crear uno nuevo
                 try:
-                    logger.info("[INIT] Inicializando Application...")
+                    loop = asyncio.get_event_loop()
+                    if loop.is_closed():
+                        raise RuntimeError("Loop cerrado")
+                except RuntimeError:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                
+                # Inicializar el Application
+                logger.info("[INIT] Inicializando Application...")
+                if not loop.is_running():
                     loop.run_until_complete(telegram_app.initialize())
-                    logger.info("[INIT] Application.initialize() completado")
-                    # Para webhooks, NO llamamos a start() - solo initialize()
-                    # start() es solo para polling y causa errores con webhooks
-                    telegram_initialized = True
-                    logger.info("[INIT] ✅ Application inicializado correctamente (modo webhook)")
-                    # Mantener loop corriendo para procesar actualizaciones
-                    loop.run_forever()
-                except Exception as e:
-                    logger.error(f"[INIT] Error: {e}", exc_info=True)
-                    telegram_initialized = False
-                    telegram_loop = None
-                finally:
-                    try:
-                        loop.close()
-                    except:
-                        pass
-            
-            init_thread = threading.Thread(target=init_app, daemon=True, name="TelegramInit")
-            init_thread.start()
-            
-            # Esperar un poco a que se inicialice
-            import time
-            for i in range(10):  # Esperar hasta 2 segundos
-                time.sleep(0.2)
-                if telegram_initialized:
-                    break
-            
-            if not telegram_initialized:
-                logger.warning("[WEBHOOK] Application aún no inicializado después de esperar")
-                return jsonify({'error': 'Application no inicializado'}), 503
+                else:
+                    # Si el loop está corriendo, usar create_task
+                    asyncio.create_task(telegram_app.initialize())
+                
+                logger.info("[INIT] Application.initialize() completado")
+                telegram_initialized = True
+                telegram_loop = loop
+                logger.info("[INIT] ✅ Application inicializado correctamente (modo webhook)")
+            except Exception as e:
+                logger.error(f"[INIT] Error: {e}", exc_info=True)
+                telegram_initialized = False
+                telegram_loop = None
+                return jsonify({'error': 'Error inicializando bot'}), 500
         except Exception as e:
             logger.error(f"[WEBHOOK] Error en inicialización lazy: {e}", exc_info=True)
             return jsonify({'error': 'Error inicializando'}), 500
@@ -223,38 +213,76 @@ def webhook():
             logger.warning("Webhook recibido sin datos")
             return jsonify({'error': 'No data'}), 400
         
-        update = Update.de_json(update_data, telegram_app.bot)
+        # Crear el Update sin el bot primero (se inicializará después)
+        update = Update.de_json(update_data, telegram_app.bot if telegram_app._initialized else None)
         update_type = 'message' if update.message else 'callback_query' if update.callback_query else 'other'
         logger.info(f"[WEBHOOK] Recibida actualización {update.update_id}, tipo: {update_type}")
         
-        # Procesar actualización directamente usando process_update en el event loop del Application
+        # Procesar actualización directamente usando process_update
         def process_update_async():
-            """Ejecuta process_update usando el event loop del Application"""
+            """Ejecuta process_update de forma asíncrona"""
+            import asyncio
+            loop = None
             try:
-                if telegram_loop and telegram_loop.is_running():
-                    # Si el loop está corriendo, usar call_soon_threadsafe para añadir la tarea
-                    future = asyncio.run_coroutine_threadsafe(
-                        telegram_app.process_update(update),
-                        telegram_loop
-                    )
-                    logger.info(f"[WEBHOOK] Actualización {update.update_id} enviada para procesamiento")
-                    # No esperamos el resultado para no bloquear
-                else:
-                    # Si el loop no está corriendo, crear uno nuevo
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    try:
-                        # Asegurarse de que el Application esté inicializado
-                        if not telegram_app._initialized:
-                            loop.run_until_complete(telegram_app.initialize())
-                        loop.run_until_complete(telegram_app.process_update(update))
-                        logger.info(f"[WEBHOOK] Actualización {update.update_id} procesada")
-                    finally:
-                        # No cerrar el loop si es el loop principal
-                        if loop != telegram_loop:
-                            loop.close()
+                # Crear un nuevo loop para esta actualización
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                
+                # Asegurarse de que el Application esté inicializado
+                if not telegram_app._initialized:
+                    logger.info(f"[WEBHOOK] Inicializando Application para update {update.update_id}")
+                    loop.run_until_complete(telegram_app.initialize())
+                    global telegram_initialized, telegram_loop
+                    telegram_initialized = True
+                    telegram_loop = loop
+                    logger.info("[INIT] ✅ Application inicializado correctamente")
+                
+                # Procesar la actualización
+                loop.run_until_complete(telegram_app.process_update(update))
+                logger.info(f"[WEBHOOK] Actualización {update.update_id} procesada correctamente")
+                
             except Exception as e:
                 logger.error(f"[WEBHOOK] Error procesando actualización {update.update_id}: {e}", exc_info=True)
+            finally:
+                # Esperar a que todas las tareas terminen antes de cerrar el loop
+                if loop and not loop.is_closed():
+                    try:
+                        # Obtener todas las tareas pendientes (excepto la tarea actual)
+                        pending = [task for task in asyncio.all_tasks(loop) if not task.done()]
+                        if pending:
+                            # Esperar a que terminen con un timeout razonable
+                            try:
+                                # Usar gather con return_exceptions para no fallar si alguna tarea falla
+                                loop.run_until_complete(asyncio.wait_for(
+                                    asyncio.gather(*pending, return_exceptions=True),
+                                    timeout=5.0  # Timeout de 5 segundos
+                                ))
+                            except asyncio.TimeoutError:
+                                logger.warning(f"[WEBHOOK] Algunas tareas no terminaron en 5 segundos, forzando cierre...")
+                                # Cancelar tareas pendientes
+                                for task in pending:
+                                    if not task.done():
+                                        task.cancel()
+                                # Esperar un poco más para que se cancelen
+                                try:
+                                    loop.run_until_complete(asyncio.wait_for(
+                                        asyncio.gather(*pending, return_exceptions=True),
+                                        timeout=1.0
+                                    ))
+                                except:
+                                    pass
+                    except Exception as cleanup_error:
+                        logger.warning(f"[WEBHOOK] Error en limpieza del loop: {cleanup_error}")
+                    finally:
+                        # Solo cerrar el loop si no es el loop principal compartido
+                        if loop != telegram_loop:
+                            try:
+                                # Dar un momento más para que cualquier operación pendiente termine
+                                import time
+                                time.sleep(0.1)
+                                loop.close()
+                            except Exception as close_error:
+                                logger.warning(f"[WEBHOOK] Error cerrando loop: {close_error}")
         
         executor.submit(process_update_async)
         
