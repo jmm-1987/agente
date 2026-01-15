@@ -244,10 +244,15 @@ def webhook():
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
                     try:
+                        # Asegurarse de que el Application esté inicializado
+                        if not telegram_app._initialized:
+                            loop.run_until_complete(telegram_app.initialize())
                         loop.run_until_complete(telegram_app.process_update(update))
                         logger.info(f"[WEBHOOK] Actualización {update.update_id} procesada")
                     finally:
-                        loop.close()
+                        # No cerrar el loop si es el loop principal
+                        if loop != telegram_loop:
+                            loop.close()
             except Exception as e:
                 logger.error(f"[WEBHOOK] Error procesando actualización {update.update_id}: {e}", exc_info=True)
         
@@ -556,9 +561,50 @@ def health():
     return jsonify({
         'status': 'ok',
         'telegram_configured': bool(config.TELEGRAM_BOT_TOKEN),
+        'telegram_initialized': telegram_initialized,
         'calendar_configured': config.GOOGLE_CALENDAR_ENABLED,
         'database_path': config.SQLITE_PATH
     })
+
+@app.route('/webhook/status')
+def webhook_status():
+    """Endpoint para verificar el estado del webhook y del bot"""
+    if not telegram_app:
+        return jsonify({
+            'bot_configured': False,
+            'error': 'Bot no configurado'
+        }), 503
+    
+    try:
+        # Obtener información del webhook desde Telegram
+        import asyncio
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            webhook_info = loop.run_until_complete(telegram_app.bot.get_webhook_info())
+            return jsonify({
+                'bot_configured': True,
+                'bot_initialized': telegram_initialized,
+                'webhook_info': {
+                    'url': webhook_info.url or 'No configurado',
+                    'has_custom_certificate': webhook_info.has_custom_certificate,
+                    'pending_update_count': webhook_info.pending_update_count,
+                    'last_error_date': str(webhook_info.last_error_date) if webhook_info.last_error_date else None,
+                    'last_error_message': webhook_info.last_error_message,
+                    'max_connections': webhook_info.max_connections
+                },
+                'expected_webhook_url': config.TELEGRAM_WEBHOOK_URL,
+                'webhook_secret_configured': bool(config.TELEGRAM_WEBHOOK_SECRET)
+            })
+        finally:
+            loop.close()
+    except Exception as e:
+        logger.error(f"Error obteniendo estado del webhook: {e}", exc_info=True)
+        return jsonify({
+            'bot_configured': True,
+            'bot_initialized': telegram_initialized,
+            'error': str(e)
+        }), 500
 
 
 if __name__ == '__main__':
