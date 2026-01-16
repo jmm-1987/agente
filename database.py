@@ -78,6 +78,32 @@ class Database:
             # La columna ya existe, ignorar
             pass
         
+        # Tabla de categorías
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS categories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                icon TEXT NOT NULL,
+                color TEXT NOT NULL DEFAULT '#3498db',
+                display_name TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        
+        # Insertar categorías por defecto si no existen
+        default_categories = [
+            ('administracion', '📋', '#3498db', 'Administración'),
+            ('averias', '🔧', '#e74c3c', 'Averías'),
+            ('clientes', '👤', '#2ecc71', 'Clientes'),
+            ('servicios', '⚙️', '#f39c12', 'Servicios')
+        ]
+        for cat_name, icon, color, display_name in default_categories:
+            cursor.execute('''
+                INSERT OR IGNORE INTO categories (name, icon, color, display_name)
+                VALUES (?, ?, ?, ?)
+            ''', (cat_name, icon, color, display_name))
+        
         # Tabla de imágenes adjuntas a tareas
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS task_images (
@@ -325,6 +351,130 @@ class Database:
             client_id=client_id,
             limit=limit
         )
+    
+    # ========== CATEGORÍAS ==========
+    
+    def get_all_categories(self) -> List[Dict]:
+        """Obtiene todas las categorías"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT id, name, icon, color, display_name, created_at, updated_at
+            FROM categories
+            ORDER BY name
+        ''')
+        
+        categories = []
+        for row in cursor.fetchall():
+            categories.append({
+                'id': row['id'],
+                'name': row['name'],
+                'icon': row['icon'],
+                'color': row['color'],
+                'display_name': row['display_name'],
+                'created_at': row['created_at'],
+                'updated_at': row['updated_at']
+            })
+        
+        conn.close()
+        return categories
+    
+    def get_category(self, category_id: int) -> Optional[Dict]:
+        """Obtiene una categoría por ID"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT id, name, icon, color, display_name, created_at, updated_at
+            FROM categories
+            WHERE id = ?
+        ''', (category_id,))
+        
+        row = cursor.fetchone()
+        conn.close()
+        
+        if row:
+            return {
+                'id': row['id'],
+                'name': row['name'],
+                'icon': row['icon'],
+                'color': row['color'],
+                'display_name': row['display_name'],
+                'created_at': row['created_at'],
+                'updated_at': row['updated_at']
+            }
+        return None
+    
+    def update_category(self, category_id: int, icon: str = None, color: str = None, display_name: str = None) -> bool:
+        """Actualiza una categoría"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        updates = []
+        params = []
+        
+        if icon is not None:
+            updates.append('icon = ?')
+            params.append(icon)
+        if color is not None:
+            updates.append('color = ?')
+            params.append(color)
+        if display_name is not None:
+            updates.append('display_name = ?')
+            params.append(display_name)
+        
+        if not updates:
+            conn.close()
+            return False
+        
+        updates.append('updated_at = CURRENT_TIMESTAMP')
+        params.append(category_id)
+        
+        cursor.execute(f'''
+            UPDATE categories
+            SET {', '.join(updates)}
+            WHERE id = ?
+        ''', params)
+        
+        success = cursor.rowcount > 0
+        conn.commit()
+        conn.close()
+        return success
+    
+    def add_category(self, name: str, icon: str, color: str, display_name: str = None) -> int:
+        """Añade una nueva categoría"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            INSERT INTO categories (name, icon, color, display_name)
+            VALUES (?, ?, ?, ?)
+        ''', (name, icon, color or '#3498db', display_name or name))
+        
+        category_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        return category_id
+    
+    def delete_category(self, category_id: int) -> bool:
+        """Elimina una categoría (solo si no hay tareas que la usen)"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        # Verificar si hay tareas usando esta categoría
+        cursor.execute('SELECT COUNT(*) as count FROM tasks WHERE category = (SELECT name FROM categories WHERE id = ?)', (category_id,))
+        row = cursor.fetchone()
+        
+        if row and row['count'] > 0:
+            conn.close()
+            return False  # No se puede eliminar si hay tareas que la usan
+        
+        cursor.execute('DELETE FROM categories WHERE id = ?', (category_id,))
+        success = cursor.rowcount > 0
+        conn.commit()
+        conn.close()
+        return success
     
     # ========== IMÁGENES DE TAREAS ==========
     

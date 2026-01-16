@@ -326,6 +326,7 @@ def tasks():
     
     db = database.db
     tasks_list = db.get_tasks()
+    categories_list = db.get_all_categories()  # Obtener categorías de la BD
     
     # Filtrar
     if status != 'all':
@@ -447,7 +448,8 @@ def tasks():
         current_user_id=user_id,
         current_task_date=task_date,
         current_search=search_query_raw,
-        view_mode=view_mode
+        view_mode=view_mode,
+        categories=categories_list
     )
 
 
@@ -501,6 +503,74 @@ def delete_client(client_id):
     db = database.db
     db.delete_client(client_id)
     return redirect(url_for('clients'))
+
+
+@app.route('/admin/categories')
+@login_required
+def categories():
+    """Vista de edición de categorías"""
+    db = database.db
+    categories_list = db.get_all_categories()
+    return render_template('categories.html', categories=categories_list)
+
+
+@app.route('/admin/categories/<int:category_id>/update', methods=['POST'])
+@login_required
+def update_category(category_id):
+    """Actualiza una categoría"""
+    try:
+        data = request.get_json()
+        icon = data.get('icon')
+        color = data.get('color')
+        display_name = data.get('display_name')
+        
+        success = database.db.update_category(category_id, icon=icon, color=color, display_name=display_name)
+        if success:
+            return jsonify({'success': True})
+        else:
+            return jsonify({'error': 'Categoría no encontrada'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/admin/tasks/<int:task_id>/edit')
+@login_required
+def get_task_edit(task_id):
+    """Obtiene los datos de una tarea para editar"""
+    try:
+        db = database.db
+        task = db.get_task_by_id(task_id)
+        
+        if not task:
+            return jsonify({'error': 'Tarea no encontrada'}), 404
+        
+        return jsonify(task)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/admin/tasks/<int:task_id>/update', methods=['POST'])
+@login_required
+def update_task(task_id):
+    """Actualiza una tarea"""
+    try:
+        data = request.get_json()
+        db = database.db
+        
+        # Validar que la tarea existe
+        task = db.get_task_by_id(task_id)
+        if not task:
+            return jsonify({'error': 'Tarea no encontrada'}), 404
+        
+        # Actualizar tarea
+        success = db.update_task(task_id, **data)
+        
+        if success:
+            return jsonify({'success': True})
+        else:
+            return jsonify({'error': 'No se pudo actualizar la tarea'}), 400
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/admin/tasks/<int:task_id>/complete', methods=['POST'])

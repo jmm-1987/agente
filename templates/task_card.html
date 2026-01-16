@@ -71,6 +71,9 @@
                 {% endif %}
             </div>
             <div class="action-buttons-row">
+                <button type="button" class="btn-action-icon btn-edit-icon" onclick="openEditTaskModal({{ task.id }})" title="Editar tarea">
+                    ✏️
+                </button>
                 {% if task.images and task.images|length > 0 %}
                 <button type="button" class="btn-action-icon btn-images-icon" onclick="openTaskImages({{ task.id }}, {{ task.images|tojson|e }})" title="Ver imágenes adjuntas ({{ task.images|length }})">
                     📎

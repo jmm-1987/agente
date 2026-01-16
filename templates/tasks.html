@@ -7,6 +7,10 @@
     <form method="GET" action="{{ url_for('tasks') }}" id="filterForm" class="filter-form">
         <!-- Menú circular tipo dock -->
         <div class="dock-container">
+            <!-- Logo -->
+            <div class="dock-logo">
+                <img src="{{ url_for('static', filename='logoagenda.png') }}" alt="Logo" class="dock-logo-img">
+            </div>
             <!-- Vista -->
             <div class="dock-item" data-filter="view_mode">
                 <button type="button" class="dock-button" onclick="toggleDockMenu(this)" title="Vista">
@@ -134,25 +138,23 @@
                             <input type="radio" name="category" value="all" {% if current_category == 'all' or not current_category %}checked{% endif %}>
                             <span>📂 Todas</span>
                         </label>
+                        {% for cat in categories %}
                         <label class="dock-option">
-                            <input type="radio" name="category" value="administracion" {% if current_category == 'administracion' %}checked{% endif %}>
-                            <span>📋 Administración</span>
+                            <input type="radio" name="category" value="{{ cat.name }}" {% if current_category == cat.name %}checked{% endif %}>
+                            <span style="color: {{ cat.color }};">{{ cat.icon }} {{ cat.display_name or cat.name }}</span>
                         </label>
-                        <label class="dock-option">
-                            <input type="radio" name="category" value="averias" {% if current_category == 'averias' %}checked{% endif %}>
-                            <span>🔧 Averías</span>
-                        </label>
-                        <label class="dock-option">
-                            <input type="radio" name="category" value="clientes" {% if current_category == 'clientes' %}checked{% endif %}>
-                            <span>👤 Clientes</span>
-                        </label>
-                        <label class="dock-option">
-                            <input type="radio" name="category" value="servicios" {% if current_category == 'servicios' %}checked{% endif %}>
-                            <span>⚙️ Servicios</span>
-                        </label>
+                        {% endfor %}
                     </div>
                 </div>
-                </div>
+            </div>
+            
+            <!-- Editar Categorías -->
+            <div class="dock-item dock-action">
+                <a href="{{ url_for('categories') }}" class="dock-button dock-button-settings" title="Editar categorías">
+                    <span class="dock-icon">⚙️</span>
+                    <span class="dock-tooltip">Editar categorías</span>
+                </a>
+            </div>
                 
             <!-- Búsqueda -->
             <div class="dock-item" data-filter="search">
@@ -301,6 +303,86 @@
         <div id="imagesContainer" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem; margin-top: 1rem; max-height: 70vh; overflow-y: auto;">
             <!-- Las imágenes se cargarán aquí -->
         </div>
+    </div>
+</div>
+
+<!-- Modal para editar tarea -->
+<div id="editTaskModal" class="modal" style="display: none;">
+    <div class="modal-content" style="max-width: 700px; max-height: 90vh; overflow-y: auto;">
+        <span class="close" onclick="closeEditTaskModal()">&times;</span>
+        <h3 style="margin-top: 0;">✏️ Editar Tarea</h3>
+        
+        <form id="editTaskForm" onsubmit="saveTaskEdit(event)">
+            <input type="hidden" id="editTaskId" name="task_id">
+            
+            <div class="form-group" style="margin-bottom: 1rem;">
+                <label for="editTitle" style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #333;">Título:</label>
+                <input type="text" id="editTitle" name="title" required style="width: 100%; padding: 0.75rem; border: 1.5px solid #e0e0e0; border-radius: 6px; font-size: 1rem;">
+            </div>
+            
+            <div class="form-group" style="margin-bottom: 1rem;">
+                <label for="editDescription" style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #333;">Descripción:</label>
+                <textarea id="editDescription" name="description" rows="4" style="width: 100%; padding: 0.75rem; border: 1.5px solid #e0e0e0; border-radius: 6px; font-size: 0.9rem; font-family: inherit; resize: vertical;"></textarea>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                <div class="form-group">
+                    <label for="editStatus" style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #333;">Estado:</label>
+                    <select id="editStatus" name="status" required style="width: 100%; padding: 0.75rem; border: 1.5px solid #e0e0e0; border-radius: 6px; font-size: 1rem;">
+                        <option value="open">🟦 Abierta</option>
+                        <option value="completed">✅ Completada</option>
+                        <option value="cancelled">❌ Cancelada</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="editPriority" style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #333;">Prioridad:</label>
+                    <select id="editPriority" name="priority" required style="width: 100%; padding: 0.75rem; border: 1.5px solid #e0e0e0; border-radius: 6px; font-size: 1rem;">
+                        <option value="low">🟢 Baja</option>
+                        <option value="normal">🟡 Normal</option>
+                        <option value="high">🟠 Alta</option>
+                        <option value="urgent">🔴 Urgente</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                <div class="form-group">
+                    <label for="editTaskDate" style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #333;">Fecha:</label>
+                    <input type="date" id="editTaskDate" name="task_date" style="width: 100%; padding: 0.75rem; border: 1.5px solid #e0e0e0; border-radius: 6px; font-size: 1rem;">
+                </div>
+                
+                <div class="form-group">
+                    <label for="editCategory" style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #333;">Categoría:</label>
+                    <select id="editCategory" name="category" style="width: 100%; padding: 0.75rem; border: 1.5px solid #e0e0e0; border-radius: 6px; font-size: 1rem;">
+                        <option value="">Sin categoría</option>
+                        {% for cat in categories %}
+                        <option value="{{ cat.name }}">{{ cat.icon }} {{ cat.display_name or cat.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            
+            <div class="form-group" style="margin-bottom: 1rem;">
+                <label for="editClient" style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #333;">Cliente:</label>
+                <select id="editClient" name="client_id" style="width: 100%; padding: 0.75rem; border: 1.5px solid #e0e0e0; border-radius: 6px; font-size: 1rem;">
+                    <option value="">Sin cliente</option>
+                    {% for client in clients %}
+                    <option value="{{ client.id }}">{{ client.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div class="form-group" style="margin-bottom: 1rem;">
+                <label for="editAmpliacion" style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #333;">Ampliación:</label>
+                <textarea id="editAmpliacion" name="ampliacion" rows="3" style="width: 100%; padding: 0.75rem; border: 1.5px solid #e0e0e0; border-radius: 6px; font-size: 0.9rem; font-family: inherit; resize: vertical;"></textarea>
+            </div>
+            
+            <div style="display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 1.5rem;">
+                <button type="button" class="btn btn-secondary" onclick="closeEditTaskModal()">Cancelar</button>
+                <button type="submit" class="btn btn-primary" id="saveTaskButton">💾 Guardar Cambios</button>
+            </div>
+        </form>
     </div>
 </div>
 
@@ -647,6 +729,117 @@ window.onclick = function(event) {
         document.querySelectorAll('.dropdown-menu').forEach(dropdown => {
             dropdown.classList.remove('show');
         });
+    }
+}
+
+// Funciones para el modal de edición de tarea
+async function openEditTaskModal(taskId) {
+    const modal = document.getElementById('editTaskModal');
+    const form = document.getElementById('editTaskForm');
+    const saveButton = document.getElementById('saveTaskButton');
+    
+    // Mostrar modal
+    modal.style.display = 'block';
+    
+    // Deshabilitar botón mientras carga
+    saveButton.disabled = true;
+    saveButton.textContent = '⏳ Cargando...';
+    
+    try {
+        // Obtener datos de la tarea
+        const response = await fetch(`/admin/tasks/${taskId}/edit`);
+        const task = await response.json();
+        
+        if (response.ok && task) {
+            // Rellenar formulario
+            document.getElementById('editTaskId').value = task.id;
+            document.getElementById('editTitle').value = task.title || '';
+            document.getElementById('editDescription').value = task.description || '';
+            document.getElementById('editStatus').value = task.status || 'open';
+            document.getElementById('editPriority').value = task.priority || 'normal';
+            document.getElementById('editTaskDate').value = task.task_date ? task.task_date.split('T')[0] : '';
+            document.getElementById('editCategory').value = task.category || '';
+            document.getElementById('editClient').value = task.client_id || '';
+            document.getElementById('editAmpliacion').value = task.ampliacion || '';
+            
+            saveButton.disabled = false;
+            saveButton.textContent = '💾 Guardar Cambios';
+        } else {
+            throw new Error(task.error || 'Error al cargar la tarea');
+        }
+    } catch (error) {
+        alert('Error al cargar la tarea: ' + error.message);
+        closeEditTaskModal();
+    }
+}
+
+function closeEditTaskModal() {
+    const modal = document.getElementById('editTaskModal');
+    modal.style.display = 'none';
+    document.getElementById('editTaskForm').reset();
+}
+
+async function saveTaskEdit(event) {
+    event.preventDefault();
+    
+    const form = event.target;
+    const formData = new FormData(form);
+    const taskId = formData.get('task_id');
+    const saveButton = document.getElementById('saveTaskButton');
+    
+    // Convertir FormData a objeto
+    const data = {
+        title: formData.get('title'),
+        description: formData.get('description') || null,
+        status: formData.get('status'),
+        priority: formData.get('priority'),
+        task_date: formData.get('task_date') || null,
+        category: formData.get('category') || null,
+        client_id: formData.get('client_id') ? parseInt(formData.get('client_id')) : null,
+        ampliacion: formData.get('ampliacion') || null
+    };
+    
+    // Limpiar valores vacíos
+    Object.keys(data).forEach(key => {
+        if (data[key] === '' || data[key] === null) {
+            delete data[key];
+        }
+    });
+    
+    saveButton.disabled = true;
+    saveButton.textContent = '⏳ Guardando...';
+    
+    try {
+        const response = await fetch(`/admin/tasks/${taskId}/update`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(data)
+        });
+        
+        const result = await response.json();
+        
+        if (response.ok && result.success) {
+            // Recargar la página para ver los cambios
+            window.location.reload();
+        } else {
+            throw new Error(result.error || 'Error al guardar');
+        }
+    } catch (error) {
+        alert('Error al guardar: ' + error.message);
+        saveButton.disabled = false;
+        saveButton.textContent = '💾 Guardar Cambios';
+    }
+}
+
+// Cerrar modal al hacer clic fuera
+const originalOnClick = window.onclick;
+window.onclick = function(event) {
+    if (originalOnClick) originalOnClick(event);
+    const editModal = document.getElementById('editTaskModal');
+    if (event.target == editModal) {
+        closeEditTaskModal();
     }
 }
 </script>
