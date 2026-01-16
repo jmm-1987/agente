@@ -5,12 +5,12 @@
 {% block content %}
 <div class="filters">
     <form method="GET" action="{{ url_for('tasks') }}" id="filterForm" class="filter-form">
+        <!-- Logo con contenedor redondo a la izquierda -->
+        <div class="logo-container">
+            <img src="{{ url_for('static', filename='logoagenda.png') }}" alt="Logo" class="logo-img">
+        </div>
         <!-- Menú circular tipo dock -->
         <div class="dock-container">
-            <!-- Logo -->
-            <div class="dock-logo">
-                <img src="{{ url_for('static', filename='logoagenda.png') }}" alt="Logo" class="dock-logo-img">
-            </div>
             <!-- Vista -->
             <div class="dock-item" data-filter="view_mode">
                 <button type="button" class="dock-button" onclick="toggleDockMenu(this)" title="Vista">
@@ -589,20 +589,19 @@ function toggleDockMenu(button) {
             menu.style.opacity = '0';
             menu.style.position = 'fixed';
             menu.style.display = 'block';
-            menu.style.transform = 'scale(1)';
+            menu.style.transform = 'translateX(-50%) scale(1)';
+            menu.style.left = buttonCenterX + 'px';
+            menu.style.top = (buttonBottomY + 10) + 'px';
             
             // Forzar reflow para que el navegador calcule el tamaño
-            const menuRect = menu.getBoundingClientRect();
-            const menuWidth = menuRect.width || 180; // fallback a 180px si no se puede medir
-            
-            // Calcular la posición izquierda para centrar el menú
-            const menuLeft = buttonCenterX - (menuWidth / 2);
+            void menu.offsetWidth;
             
             // Establecer posición final del menú
+            // Usamos translateX(-50%) para centrar desde el punto del botón
             menu.style.position = 'fixed';
             menu.style.top = (buttonBottomY + 10) + 'px';
-            menu.style.left = menuLeft + 'px';
-            menu.style.transform = 'scale(1)';
+            menu.style.left = buttonCenterX + 'px';
+            menu.style.transform = 'translateX(-50%) scale(1)';
             menu.style.margin = '0';
             menu.style.padding = '0';
             menu.style.zIndex = '10000';
