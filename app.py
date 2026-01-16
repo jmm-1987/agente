@@ -96,7 +96,8 @@ def date_weekday_filter(value):
 # Inicializar bot de Telegram
 bot_handler = telegram_bot.TelegramBotHandler()
 telegram_app = None
-telegram_loop = None  # Event loop del Application
+telegram_loop = None  # Event loop compartido del Application
+telegram_loop_thread = None  # Thread que mantiene el loop vivo
 executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="telegram_bot")
 telegram_initialized = False
 
@@ -156,6 +157,60 @@ def logout():
 
 # ========== WEBHOOK TELEGRAM ==========
 
+def _ensure_telegram_loop():
+    """Asegura que existe un loop compartido para el Application"""
+    global telegram_loop, telegram_loop_thread, telegram_initialized
+    
+    if telegram_loop is not None and not telegram_loop.is_closed():
+        return telegram_loop
+    
+    def run_loop():
+        """Ejecuta el loop en un thread separado"""
+        global telegram_loop, telegram_initialized
+        import asyncio
+        
+        # Crear nuevo loop para este thread
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        telegram_loop = loop
+        
+        # Inicializar Application en este loop
+        try:
+            logger.info("[LOOP] Inicializando Application en loop compartido...")
+            loop.run_until_complete(telegram_app.initialize())
+            telegram_initialized = True
+            logger.info("[LOOP] ✅ Application inicializado en loop compartido")
+        except Exception as e:
+            logger.error(f"[LOOP] Error inicializando Application: {e}", exc_info=True)
+            telegram_initialized = False
+            return
+        
+        # Mantener el loop corriendo
+        try:
+            loop.run_forever()
+        except Exception as e:
+            logger.error(f"[LOOP] Error en loop: {e}", exc_info=True)
+        finally:
+            loop.close()
+    
+    # Iniciar thread con el loop
+    telegram_loop_thread = threading.Thread(target=run_loop, daemon=True, name="telegram_loop")
+    telegram_loop_thread.start()
+    
+    # Esperar a que el loop esté listo
+    import time
+    max_wait = 5
+    waited = 0
+    while (telegram_loop is None or telegram_loop.is_closed() or not telegram_initialized) and waited < max_wait:
+        time.sleep(0.1)
+        waited += 0.1
+    
+    if telegram_loop is None or telegram_loop.is_closed():
+        raise RuntimeError("No se pudo crear el loop compartido")
+    
+    return telegram_loop
+
+
 @app.route('/webhook', methods=['POST'])
 def webhook():
     """Webhook para recibir actualizaciones de Telegram"""
@@ -165,42 +220,12 @@ def webhook():
         logger.error("Webhook recibido pero bot no configurado")
         return jsonify({'error': 'Bot no configurado'}), 503
     
-    # Inicializar Application de forma lazy si no está inicializado
-    if not telegram_initialized:
-        logger.info("[WEBHOOK] Application no inicializado, inicializando ahora...")
-        try:
-            # Inicializar directamente en el thread actual para evitar problemas con loops
-            import asyncio
-            try:
-                # Intentar obtener el loop actual, si no existe crear uno nuevo
-                try:
-                    loop = asyncio.get_event_loop()
-                    if loop.is_closed():
-                        raise RuntimeError("Loop cerrado")
-                except RuntimeError:
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                
-                # Inicializar el Application
-                logger.info("[INIT] Inicializando Application...")
-                if not loop.is_running():
-                    loop.run_until_complete(telegram_app.initialize())
-                else:
-                    # Si el loop está corriendo, usar create_task
-                    asyncio.create_task(telegram_app.initialize())
-                
-                logger.info("[INIT] Application.initialize() completado")
-                telegram_initialized = True
-                telegram_loop = loop
-                logger.info("[INIT] ✅ Application inicializado correctamente (modo webhook)")
-            except Exception as e:
-                logger.error(f"[INIT] Error: {e}", exc_info=True)
-                telegram_initialized = False
-                telegram_loop = None
-                return jsonify({'error': 'Error inicializando bot'}), 500
-        except Exception as e:
-            logger.error(f"[WEBHOOK] Error en inicialización lazy: {e}", exc_info=True)
-            return jsonify({'error': 'Error inicializando'}), 500
+    # Asegurar que existe el loop compartido
+    try:
+        _ensure_telegram_loop()
+    except Exception as e:
+        logger.error(f"[WEBHOOK] Error asegurando loop: {e}", exc_info=True)
+        return jsonify({'error': 'Error inicializando bot'}), 500
     
     # Verificar secreto si está configurado
     if config.TELEGRAM_WEBHOOK_SECRET:
@@ -215,41 +240,26 @@ def webhook():
             logger.warning("Webhook recibido sin datos")
             return jsonify({'error': 'No data'}), 400
         
-        # Crear el Update sin el bot primero (se inicializará después)
+        # Crear el Update
         update = Update.de_json(update_data, telegram_app.bot if telegram_app._initialized else None)
         update_type = 'message' if update.message else 'callback_query' if update.callback_query else 'other'
         logger.info(f"[WEBHOOK] Recibida actualización {update.update_id}, tipo: {update_type}")
         
-        # Procesar actualización usando el executor
-        # Usar un enfoque simple: crear un loop, procesar, y dejar que se cierre naturalmente
+        # Procesar actualización en el loop compartido
         def process_update_async():
-            """Ejecuta process_update de forma asíncrona"""
+            """Ejecuta process_update en el loop compartido"""
             import asyncio
-            loop = None
             try:
-                # Crear un nuevo loop para esta actualización
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                
-                # Asegurarse de que el Application esté inicializado
-                if not telegram_app._initialized:
-                    logger.info(f"[WEBHOOK] Inicializando Application para update {update.update_id}")
-                    loop.run_until_complete(telegram_app.initialize())
-                    global telegram_initialized, telegram_loop
-                    telegram_initialized = True
-                    telegram_loop = loop
-                    logger.info("[INIT] ✅ Application inicializado correctamente")
-                
-                # Procesar la actualización - esto puede iniciar operaciones HTTP asíncronas
-                loop.run_until_complete(telegram_app.process_update(update))
+                # Usar run_coroutine_threadsafe para ejecutar en el loop compartido
+                future = asyncio.run_coroutine_threadsafe(
+                    telegram_app.process_update(update),
+                    telegram_loop
+                )
+                # Esperar a que termine (con timeout)
+                future.result(timeout=30)
                 logger.info(f"[WEBHOOK] Actualización {update.update_id} procesada")
-                
-                # NO cerrar el loop aquí - las operaciones HTTP asíncronas necesitan que esté vivo
-                # El loop se cerrará cuando el thread termine, dando tiempo a las operaciones HTTP
-                
             except Exception as e:
                 logger.error(f"[WEBHOOK] Error procesando actualización {update.update_id}: {e}", exc_info=True)
-            # No cerrar el loop explícitamente - dejar que termine naturalmente con el thread
         
         executor.submit(process_update_async)
         
@@ -311,6 +321,8 @@ def tasks():
     user_id = request.args.get('user_id', type=int)
     task_date = request.args.get('task_date', '')
     view_mode = request.args.get('view_mode', 'list')
+    search_query_raw = request.args.get('search', '').strip()
+    search_query = search_query_raw.lower()
     
     db = database.db
     tasks_list = db.get_tasks()
@@ -324,6 +336,27 @@ def tasks():
         tasks_list = [t for t in tasks_list if t.get('category') == category]
     if user_id:
         tasks_list = [t for t in tasks_list if t['user_id'] == user_id]
+    
+    # Búsqueda en todos los campos
+    if search_query:
+        search_results = []
+        for task in tasks_list:
+            # Buscar en todos los campos relevantes
+            searchable_fields = [
+                task.get('title', '') or '',
+                task.get('description', '') or '',
+                task.get('client_name_raw', '') or '',
+                task.get('solution', '') or '',
+                task.get('ampliacion', '') or '',
+                task.get('category', '') or '',
+                task.get('user_name', '') or '',
+            ]
+            # Concatenar todos los campos y buscar
+            searchable_text = ' '.join(str(field) for field in searchable_fields).lower()
+            if search_query in searchable_text:
+                search_results.append(task)
+        tasks_list = search_results
+    
     if task_date:
         # Filtrar por fecha de tarea (comparar solo la fecha, sin hora)
         try:
@@ -413,6 +446,7 @@ def tasks():
         current_category=category,
         current_user_id=user_id,
         current_task_date=task_date,
+        current_search=search_query_raw,
         view_mode=view_mode
     )
 
@@ -603,23 +637,24 @@ def webhook_status():
 
 
 if __name__ == '__main__':
-    import asyncio
-    import threading
-    
     # Inicializar base de datos
     database.db.init_db()
     
-    # Iniciar bot con polling en local (solo si hay token)
-    def run_bot():
-        if telegram_app:
-            logger.info("Iniciando bot de Telegram con polling...")
-            telegram_app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
-    
-    # Iniciar bot en thread separado
-    if telegram_app:
-        bot_thread = threading.Thread(target=run_bot, daemon=True)
-        bot_thread.start()
-        logger.info("Bot de Telegram iniciado en modo polling")
+    # NOTA: No iniciamos el bot en modo polling cuando se ejecuta localmente
+    # El bot debe usar webhook en producción. Si necesitas probar localmente,
+    # configura ngrok y cambia el webhook temporalmente, o usa un bot de prueba.
+    # Para desarrollo local con polling, descomenta las líneas siguientes:
+    #
+    # import asyncio
+    # import threading
+    # def run_bot():
+    #     if telegram_app:
+    #         logger.info("Iniciando bot de Telegram con polling...")
+    #         telegram_app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
+    # if telegram_app:
+    #     bot_thread = threading.Thread(target=run_bot, daemon=True)
+    #     bot_thread.start()
+    #     logger.info("Bot de Telegram iniciado en modo polling")
     
     # Iniciar aplicación Flask
     app.run(

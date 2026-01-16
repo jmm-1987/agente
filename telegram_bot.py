@@ -80,28 +80,40 @@ class TelegramBotHandler:
             await update.message.reply_text(
                 "👋 ¡Hola! Soy tu bot de agenda.\n\n"
                 "📝 **Cómo usarme:**\n"
-                "• Envía un **mensaje de voz** para crear tareas\n"
-                "• Ejemplos de comandos por voz:\n"
+                "• Envía un **mensaje de voz o texto** para crear tareas\n"
+                "• Ejemplos de comandos:\n"
                 "  - 'Crear tarea llamar al cliente Alditraex mañana'\n"
                 "  - 'Listar tareas pendientes'\n"
                 "  - 'Da por hecha la tarea del cliente Alditraex'\n\n"
-                "🎤 **Importante:** Solo respondo a mensajes de voz.\n"
-                "Envía un audio con tu comando para empezar.",
+                "💬 Puedes escribir o enviar un audio con tu comando.",
                 reply_markup=reply_markup
             )
             return
         
-        # Si es texto normal, explicar que necesita ser voz
-        await update.message.reply_text(
-            "👋 Hola! Este bot funciona con **mensajes de voz**.\n\n"
-            "🎤 Por favor, envía un mensaje de voz con tu comando.\n\n"
-            "Ejemplos:\n"
-            "• 'Crear tarea llamar al cliente mañana'\n"
-            "• 'Listar tareas pendientes'\n"
-            "• 'Da por hecha la tarea del cliente X'\n\n"
-            "Escribe /help para más información.",
-            reply_markup=reply_markup
-        )
+        # Procesar texto como si fuera voz transcrito
+        user = update.effective_user
+        
+        # Verificar si el usuario está en modo "ampliar tarea"
+        user_state = self.user_states.get(user.id)
+        if user_state and user_state.get('action') == 'ampliar_task':
+            # Procesar como ampliación de tarea
+            task_id = user_state.get('task_id')
+            await self._add_ampliacion_to_task(update, task_id, text, user)
+            # Limpiar estado
+            del self.user_states[user.id]
+            return
+        
+        # Verificar si el usuario está esperando categoría
+        if user_state and user_state.get('action') == 'waiting_category':
+            # Procesar respuesta de categoría
+            await self._handle_category_response(update, context, text, user)
+            return
+        
+        # Parsear intención y entidades del texto
+        parsed = self.parser.parse(text)
+        
+        # Procesar según intención
+        await self._handle_intent(update, context, parsed, user)
     
     async def handle_voice_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Procesa mensaje de voz"""

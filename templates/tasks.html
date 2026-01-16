@@ -3,56 +3,194 @@
 {% block title %}Tareas - Agenda Telegram{% endblock %}
 
 {% block content %}
-<h2></h2>
-
 <div class="filters">
-    <form method="GET" action="{{ url_for('tasks') }}" class="filter-form">
-        <select name="view_mode" id="view_mode" onchange="changeView(this.value)">
-            <option value="list" {% if view_mode != 'calendar' %}selected{% endif %}>📋 Lista</option>
-            <option value="calendar" {% if view_mode == 'calendar' %}selected{% endif %}>📅 Semana</option>
-        </select>
-        
-        <select name="status">
-            <option value="all" {% if current_status == 'all' %}selected{% endif %}>📊 Todos</option>
-            <option value="open" {% if current_status == 'open' or current_status == '' %}selected{% endif %}>🟦 Abiertas</option>
-            <option value="completed" {% if current_status == 'completed' %}selected{% endif %}>✅ Completadas</option>
-            <option value="cancelled" {% if current_status == 'cancelled' %}selected{% endif %}>❌ Canceladas</option>
-        </select>
-        
-        <select name="priority">
-            <option value="all" {% if current_priority == 'all' %}selected{% endif %}>⚡ Todas</option>
-            <option value="urgent" {% if current_priority == 'urgent' %}selected{% endif %}>🔴 Urgente</option>
-            <option value="high" {% if current_priority == 'high' %}selected{% endif %}>🟠 Alta</option>
-            <option value="normal" {% if current_priority == 'normal' %}selected{% endif %}>🟡 Normal</option>
-            <option value="low" {% if current_priority == 'low' %}selected{% endif %}>🟢 Baja</option>
-        </select>
-        
-        <select name="user_id">
-            <option value="">👤 Todos los usuarios</option>
-            {% for uid, uname in users.items() %}
-            <option value="{{ uid }}" {% if current_user_id == uid %}selected{% endif %}>
-                {{ uname }}
-            </option>
-            {% endfor %}
-        </select>
-        
-        <input type="date" name="task_date" value="{{ current_task_date }}" placeholder="Fecha de tarea" style="padding: 0.4rem 0.7rem; border: 1.5px solid #e0e0e0; border-radius: 6px; font-size: 0.85rem; background: white; cursor: pointer;">
-        
-        <select name="category">
-            <option value="all" {% if current_category == 'all' or not current_category %}selected{% endif %}>📂 Todas las categorías</option>
-            <option value="administracion" {% if current_category == 'administracion' %}selected{% endif %}>📋 Administración</option>
-            <option value="averias" {% if current_category == 'averias' %}selected{% endif %}>🔧 Averías</option>
-            <option value="clientes" {% if current_category == 'clientes' %}selected{% endif %}>👤 Clientes</option>
-            <option value="servicios" {% if current_category == 'servicios' %}selected{% endif %}>⚙️ Servicios</option>
-        </select>
-        
-        <button type="submit" class="btn btn-primary">🔍 Filtrar</button>
-        <a href="{{ url_for('tasks') }}" class="btn btn-secondary">🔄 Limpiar</a>
-        <a href="{{ url_for('logout') }}" class="logout-btn" title="Cerrar sesión">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M18 6L6 18M6 6l12 12"/>
-            </svg>
-        </a>
+    <form method="GET" action="{{ url_for('tasks') }}" id="filterForm" class="filter-form">
+        <!-- Menú circular tipo dock -->
+        <div class="dock-container">
+            <!-- Vista -->
+            <div class="dock-item" data-filter="view_mode">
+                <button type="button" class="dock-button" onclick="toggleDockMenu(this)" title="Vista">
+                    <span class="dock-icon">📋</span>
+                    <span class="dock-tooltip">Vista</span>
+                </button>
+                <div class="dock-menu">
+                    <div class="dock-menu-content">
+                        <label class="dock-option">
+                            <input type="radio" name="view_mode" value="list" {% if view_mode != 'calendar' %}checked{% endif %} onchange="changeView('list')">
+                            <span>📋 Lista</span>
+                        </label>
+                        <label class="dock-option">
+                            <input type="radio" name="view_mode" value="calendar" {% if view_mode == 'calendar' %}checked{% endif %} onchange="changeView('calendar')">
+                            <span>📅 Semana</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Estado -->
+            <div class="dock-item" data-filter="status">
+                <button type="button" class="dock-button" onclick="toggleDockMenu(this)" title="Estado">
+                    <span class="dock-icon">📊</span>
+                    <span class="dock-tooltip">Estado</span>
+                </button>
+                <div class="dock-menu">
+                    <div class="dock-menu-content">
+                        <label class="dock-option">
+                            <input type="radio" name="status" value="all" {% if current_status == 'all' %}checked{% endif %}>
+                            <span>📊 Todos</span>
+                        </label>
+                        <label class="dock-option">
+                            <input type="radio" name="status" value="open" {% if current_status == 'open' or current_status == '' %}checked{% endif %}>
+                            <span>🟦 Abiertas</span>
+                        </label>
+                        <label class="dock-option">
+                            <input type="radio" name="status" value="completed" {% if current_status == 'completed' %}checked{% endif %}>
+                            <span>✅ Completadas</span>
+                        </label>
+                        <label class="dock-option">
+                            <input type="radio" name="status" value="cancelled" {% if current_status == 'cancelled' %}checked{% endif %}>
+                            <span>❌ Canceladas</span>
+                        </label>
+                    </div>
+                </div>
+</div>
+
+            <!-- Prioridad -->
+            <div class="dock-item" data-filter="priority">
+                <button type="button" class="dock-button" onclick="toggleDockMenu(this)" title="Prioridad">
+                    <span class="dock-icon">⚡</span>
+                    <span class="dock-tooltip">Prioridad</span>
+                </button>
+                <div class="dock-menu">
+                    <div class="dock-menu-content">
+                        <label class="dock-option">
+                            <input type="radio" name="priority" value="all" {% if current_priority == 'all' %}checked{% endif %}>
+                            <span>⚡ Todas</span>
+                        </label>
+                        <label class="dock-option">
+                            <input type="radio" name="priority" value="urgent" {% if current_priority == 'urgent' %}checked{% endif %}>
+                            <span>🔴 Urgente</span>
+                        </label>
+                        <label class="dock-option">
+                            <input type="radio" name="priority" value="high" {% if current_priority == 'high' %}checked{% endif %}>
+                            <span>🟠 Alta</span>
+                        </label>
+                        <label class="dock-option">
+                            <input type="radio" name="priority" value="normal" {% if current_priority == 'normal' %}checked{% endif %}>
+                            <span>🟡 Normal</span>
+                        </label>
+                        <label class="dock-option">
+                            <input type="radio" name="priority" value="low" {% if current_priority == 'low' %}checked{% endif %}>
+                            <span>🟢 Baja</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Usuario -->
+            <div class="dock-item" data-filter="user_id">
+                <button type="button" class="dock-button" onclick="toggleDockMenu(this)" title="Usuario">
+                    <span class="dock-icon">👤</span>
+                    <span class="dock-tooltip">Usuario</span>
+                </button>
+                <div class="dock-menu">
+                    <div class="dock-menu-content">
+                        <label class="dock-option">
+                            <input type="radio" name="user_id" value="" {% if not current_user_id %}checked{% endif %}>
+                            <span>👤 Todos</span>
+                        </label>
+                        {% for uid, uname in users.items() %}
+                        <label class="dock-option">
+                            <input type="radio" name="user_id" value="{{ uid }}" {% if current_user_id == uid %}checked{% endif %}>
+                            <span>{{ uname }}</span>
+                        </label>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Fecha -->
+            <div class="dock-item" data-filter="task_date">
+                <button type="button" class="dock-button" onclick="toggleDockMenu(this)" title="Fecha">
+                    <span class="dock-icon">📅</span>
+                    <span class="dock-tooltip">Fecha</span>
+                </button>
+                <div class="dock-menu">
+                    <div class="dock-menu-content">
+                        <input type="date" name="task_date" value="{{ current_task_date }}" class="dock-date-input" placeholder="Fecha">
+                    </div>
+                </div>
+                </div>
+                
+            <!-- Categoría -->
+            <div class="dock-item" data-filter="category">
+                <button type="button" class="dock-button" onclick="toggleDockMenu(this)" title="Categoría">
+                    <span class="dock-icon">📂</span>
+                    <span class="dock-tooltip">Categoría</span>
+                </button>
+                <div class="dock-menu">
+                    <div class="dock-menu-content">
+                        <label class="dock-option">
+                            <input type="radio" name="category" value="all" {% if current_category == 'all' or not current_category %}checked{% endif %}>
+                            <span>📂 Todas</span>
+                        </label>
+                        <label class="dock-option">
+                            <input type="radio" name="category" value="administracion" {% if current_category == 'administracion' %}checked{% endif %}>
+                            <span>📋 Administración</span>
+                        </label>
+                        <label class="dock-option">
+                            <input type="radio" name="category" value="averias" {% if current_category == 'averias' %}checked{% endif %}>
+                            <span>🔧 Averías</span>
+                        </label>
+                        <label class="dock-option">
+                            <input type="radio" name="category" value="clientes" {% if current_category == 'clientes' %}checked{% endif %}>
+                            <span>👤 Clientes</span>
+                        </label>
+                        <label class="dock-option">
+                            <input type="radio" name="category" value="servicios" {% if current_category == 'servicios' %}checked{% endif %}>
+                            <span>⚙️ Servicios</span>
+                        </label>
+                    </div>
+                </div>
+                </div>
+                
+            <!-- Búsqueda -->
+            <div class="dock-item" data-filter="search">
+                <button type="button" class="dock-button" onclick="toggleDockMenu(this)" title="Buscar">
+                    <span class="dock-icon">🔍</span>
+                    <span class="dock-tooltip">Buscar</span>
+                </button>
+                <div class="dock-menu">
+                    <div class="dock-menu-content">
+                        <input type="text" name="search" value="{{ current_search or '' }}" class="dock-search-input" placeholder="Buscar...">
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Filtrar -->
+            <div class="dock-item dock-action">
+                <button type="submit" class="dock-button dock-button-primary" title="Filtrar">
+                    <span class="dock-icon">✓</span>
+                    <span class="dock-tooltip">Filtrar</span>
+                    </button>
+            </div>
+            
+            <!-- Limpiar -->
+            <div class="dock-item dock-action">
+                <a href="{{ url_for('tasks') }}" class="dock-button dock-button-secondary" title="Limpiar">
+                    <span class="dock-icon">🔄</span>
+                    <span class="dock-tooltip">Limpiar</span>
+                </a>
+            </div>
+            
+            <!-- Logout -->
+            <div class="dock-item dock-action">
+                <a href="{{ url_for('logout') }}" class="dock-button dock-button-danger" title="Cerrar sesión">
+                    <span class="dock-icon">✕</span>
+                    <span class="dock-tooltip">Cerrar sesión</span>
+                </a>
+            </div>
+        </div>
     </form>
 </div>
 
@@ -65,8 +203,8 @@
             <button type="button" class="toggle-section-btn" onclick="toggleNoDateSection()" id="toggleNoDateBtn" title="Mostrar/Ocultar tareas sin fecha">
                 <svg id="toggleNoDateIcon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" style="transition: transform 0.3s ease;">
                     <path d="M6 9l6 6 6-6"/>
-                </svg>
-            </button>
+                        </svg>
+                    </button>
         </div>
         <div class="tasks-slider" id="noDateSlider" style="display: block;">
             <div class="slider-container">
@@ -126,9 +264,9 @@
                             {% endif %}
                         {% endif %}
                     {% endfor %}
-                </div>
             </div>
-            {% endfor %}
+        </div>
+        {% endfor %}
         </div>
     </div>
     {% else %}
@@ -342,6 +480,154 @@ function openTaskImages(taskId, imagesJson) {
 function closeImagesModal() {
     document.getElementById('imagesModal').style.display = 'none';
 }
+
+// Funciones para el menú dock circular
+function toggleDockMenu(button) {
+    const dockItem = button.closest('.dock-item');
+    const isActive = dockItem.classList.contains('active');
+    
+    // Cerrar todos los menús
+    document.querySelectorAll('.dock-item').forEach(item => {
+        item.classList.remove('active');
+    });
+    
+    // Abrir el menú seleccionado si no estaba activo
+    if (!isActive) {
+        // Calcular posición del botón
+        const buttonRect = button.getBoundingClientRect();
+        const menu = dockItem.querySelector('.dock-menu');
+        
+        if (menu) {
+            // Calcular el centro exacto del botón relativo al viewport
+            const buttonCenterX = buttonRect.left + (buttonRect.width / 2);
+            const buttonBottomY = buttonRect.bottom;
+            
+            // Hacer el menú visible temporalmente para medir su ancho
+            menu.style.visibility = 'hidden';
+            menu.style.opacity = '0';
+            menu.style.position = 'fixed';
+            menu.style.display = 'block';
+            menu.style.transform = 'scale(1)';
+            
+            // Forzar reflow para que el navegador calcule el tamaño
+            const menuRect = menu.getBoundingClientRect();
+            const menuWidth = menuRect.width || 180; // fallback a 180px si no se puede medir
+            
+            // Calcular la posición izquierda para centrar el menú
+            const menuLeft = buttonCenterX - (menuWidth / 2);
+            
+            // Establecer posición final del menú
+            menu.style.position = 'fixed';
+            menu.style.top = (buttonBottomY + 10) + 'px';
+            menu.style.left = menuLeft + 'px';
+            menu.style.transform = 'scale(1)';
+            menu.style.margin = '0';
+            menu.style.padding = '0';
+            menu.style.zIndex = '10000';
+            menu.style.visibility = ''; // Restaurar visibilidad
+            menu.style.opacity = ''; // Restaurar opacidad
+        }
+        
+        dockItem.classList.add('active');
+    }
+}
+
+// Auto-enviar formulario al cambiar opciones
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('filterForm');
+    const radioButtons = form.querySelectorAll('input[type="radio"]');
+    const dateInput = form.querySelector('input[type="date"]');
+    const searchInput = form.querySelector('input[name="search"]');
+    
+    // Auto-enviar al cambiar radios (con pequeño delay para UX)
+        radioButtons.forEach(radio => {
+        radio.addEventListener('change', function() {
+            // Cerrar el menú
+            this.closest('.dock-item')?.classList.remove('active');
+            
+            // Restaurar scroll
+            const scrollY = document.body.style.top;
+            document.body.style.overflow = '';
+            document.body.style.position = '';
+            document.body.style.top = '';
+            document.body.style.width = '';
+            if (scrollY) {
+                window.scrollTo(0, parseInt(scrollY || '0') * -1);
+            }
+            
+            // Enviar formulario después de un pequeño delay
+            setTimeout(() => {
+                form.submit();
+            }, 300);
+        });
+    });
+    
+    // Auto-enviar al cambiar fecha (con delay para que el usuario pueda seleccionar)
+    if (dateInput) {
+        let dateTimeout;
+        dateInput.addEventListener('change', function() {
+            clearTimeout(dateTimeout);
+            this.closest('.dock-item')?.classList.remove('active');
+            
+            // Restaurar scroll
+            const scrollY = document.body.style.top;
+            document.body.style.overflow = '';
+            document.body.style.position = '';
+            document.body.style.top = '';
+            document.body.style.width = '';
+            if (scrollY) {
+                window.scrollTo(0, parseInt(scrollY || '0') * -1);
+            }
+            
+            dateTimeout = setTimeout(() => {
+                form.submit();
+            }, 500);
+        });
+    }
+    
+    // Auto-enviar al escribir en búsqueda (con debounce)
+    if (searchInput) {
+        let searchTimeout;
+        searchInput.addEventListener('input', function() {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                if (this.value.length === 0 || this.value.length >= 3) {
+                    this.closest('.dock-item')?.classList.remove('active');
+                    
+                    // Restaurar scroll
+                    const scrollY = document.body.style.top;
+                    document.body.style.overflow = '';
+                    document.body.style.position = '';
+                    document.body.style.top = '';
+                    document.body.style.width = '';
+                    if (scrollY) {
+                        window.scrollTo(0, parseInt(scrollY || '0') * -1);
+                    }
+                    
+                    form.submit();
+                }
+            }, 800);
+        });
+    }
+});
+
+// Cerrar menús del dock al hacer clic fuera
+document.addEventListener('click', function(event) {
+    if (!event.target.closest('.dock-item')) {
+        document.querySelectorAll('.dock-item').forEach(item => {
+            item.classList.remove('active');
+        });
+        // Restaurar scroll cuando se cierra el menú
+        const scrollY = document.body.style.top;
+        document.body.style.overflow = '';
+        document.body.style.position = '';
+        document.body.style.top = '';
+        document.body.style.width = '';
+        if (scrollY) {
+            window.scrollTo(0, parseInt(scrollY || '0') * -1);
+        }
+    }
+});
 
 // Cerrar modal de imágenes al hacer clic fuera
 window.onclick = function(event) {
