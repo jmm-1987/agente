@@ -1,0 +1,287 @@
+{% extends "base.html" %}
+
+{% block title %}Gestión de Base de Datos - Agenda Telegram{% endblock %}
+
+{% block content %}
+<h2>Gestión de Base de Datos</h2>
+
+<div class="database-management">
+    <!-- Sección de Exportar -->
+    <div class="db-section">
+        <div class="db-card">
+            <h3>📥 Exportar Base de Datos</h3>
+            <p>Descarga una copia completa de la base de datos actual.</p>
+            <button type="button" class="btn btn-primary" onclick="descargarDB()">
+                <span>⬇️</span> Descargar Base de Datos
+            </button>
+        </div>
+    </div>
+
+    <!-- Sección de Importar -->
+    <div class="db-section">
+        <div class="db-card">
+            <h3>📤 Importar Base de Datos</h3>
+            <p>Importa una base de datos desde un archivo. Se creará un respaldo automático antes de importar.</p>
+            <form id="importForm" enctype="multipart/form-data">
+                <div class="form-group">
+                    <label for="db_file">Seleccionar archivo .db:</label>
+                    <input type="file" id="db_file" name="db_file" accept=".db" required>
+                </div>
+                <button type="submit" class="btn btn-success" id="importBtn">
+                    <span>📤</span> Importar Base de Datos
+                </button>
+            </form>
+            <div id="importStatus" class="import-status"></div>
+        </div>
+    </div>
+
+    <!-- Información -->
+    <div class="db-section">
+        <div class="db-card db-info">
+            <h3>ℹ️ Información</h3>
+            <ul>
+                <li>Las exportaciones incluyen un timestamp en el nombre del archivo.</li>
+                <li>Antes de importar, se crea automáticamente un respaldo de la base de datos actual.</li>
+                <li>Los respaldos se guardan en el directorio <code>data/</code> con el formato <code>app_db_backup_YYYYMMDD_HHMMSS.db</code>.</li>
+                <li>Solo se pueden importar archivos con extensión <code>.db</code>.</li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<script>
+function descargarDB() {
+    // Crear un enlace temporal para descargar
+    const link = document.createElement('a');
+    link.href = '{{ url_for("descargar_db") }}';
+    link.download = '';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    // Mostrar mensaje de éxito
+    mostrarMensaje('✅ Descarga iniciada', 'success');
+}
+
+document.getElementById('importForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const formData = new FormData(this);
+    const fileInput = document.getElementById('db_file');
+    const importBtn = document.getElementById('importBtn');
+    const statusDiv = document.getElementById('importStatus');
+    
+    // Validar que se haya seleccionado un archivo
+    if (!fileInput.files || fileInput.files.length === 0) {
+        mostrarMensaje('❌ Por favor, selecciona un archivo', 'error', statusDiv);
+        return;
+    }
+    
+    // Validar extensión
+    const fileName = fileInput.files[0].name;
+    if (!fileName.endsWith('.db')) {
+        mostrarMensaje('❌ El archivo debe tener extensión .db', 'error', statusDiv);
+        return;
+    }
+    
+    // Deshabilitar botón durante la importación
+    importBtn.disabled = true;
+    importBtn.innerHTML = '<span>⏳</span> Importando...';
+    statusDiv.innerHTML = '<div class="alert alert-info">⏳ Importando base de datos, por favor espera...</div>';
+    
+    try {
+        const response = await fetch('{{ url_for("importar_db") }}', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok && data.success) {
+            mostrarMensaje(
+                `✅ ${data.message}${data.backup_created ? ' (Respaldo creado)' : ''}`,
+                'success',
+                statusDiv
+            );
+            // Limpiar el formulario
+            fileInput.value = '';
+            
+            // Opcional: recargar la página después de 2 segundos
+            setTimeout(() => {
+                window.location.reload();
+            }, 2000);
+        } else {
+            mostrarMensaje(`❌ Error: ${data.error || 'Error desconocido'}`, 'error', statusDiv);
+        }
+    } catch (error) {
+        mostrarMensaje(`❌ Error al importar: ${error.message}`, 'error', statusDiv);
+    } finally {
+        importBtn.disabled = false;
+        importBtn.innerHTML = '<span>📤</span> Importar Base de Datos';
+    }
+});
+
+function mostrarMensaje(mensaje, tipo, contenedor = null) {
+    const alertClass = tipo === 'success' ? 'alert-success' : 'alert-error';
+    const mensajeHTML = `<div class="alert ${alertClass}">${mensaje}</div>`;
+    
+    if (contenedor) {
+        contenedor.innerHTML = mensajeHTML;
+    } else {
+        // Crear un mensaje temporal en la parte superior
+        const alertDiv = document.createElement('div');
+        alertDiv.className = `alert ${alertClass}`;
+        alertDiv.innerHTML = mensaje;
+        alertDiv.style.position = 'fixed';
+        alertDiv.style.top = '20px';
+        alertDiv.style.right = '20px';
+        alertDiv.style.zIndex = '10000';
+        alertDiv.style.minWidth = '300px';
+        alertDiv.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
+        
+        document.body.appendChild(alertDiv);
+        
+        // Eliminar después de 5 segundos
+        setTimeout(() => {
+            alertDiv.style.opacity = '0';
+            alertDiv.style.transition = 'opacity 0.3s';
+            setTimeout(() => {
+                document.body.removeChild(alertDiv);
+            }, 300);
+        }, 5000);
+    }
+}
+</script>
+
+<style>
+.database-management {
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+    margin-top: 2rem;
+}
+
+.db-section {
+    width: 100%;
+}
+
+.db-card {
+    background: rgba(255, 255, 255, 0.98);
+    backdrop-filter: blur(10px);
+    border-radius: 12px;
+    padding: 2rem;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.db-card h3 {
+    color: #1e3a5f;
+    margin-bottom: 1rem;
+    font-size: 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.db-card p {
+    color: #666;
+    margin-bottom: 1.5rem;
+    line-height: 1.6;
+}
+
+.db-card .btn {
+    font-size: 1rem;
+    padding: 0.75rem 1.5rem;
+}
+
+.db-card .btn span {
+    margin-right: 0.5rem;
+    font-size: 1.2rem;
+}
+
+.db-info {
+    background: rgba(30, 58, 95, 0.05);
+    border-left: 4px solid #1e3a5f;
+}
+
+.db-info ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.db-info li {
+    padding: 0.75rem 0;
+    color: #333;
+    line-height: 1.6;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.db-info li:last-child {
+    border-bottom: none;
+}
+
+.db-info code {
+    background: rgba(30, 58, 95, 0.1);
+    padding: 0.2rem 0.4rem;
+    border-radius: 4px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.9em;
+    color: #1e3a5f;
+}
+
+.form-group {
+    margin-bottom: 1.5rem;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+    color: #333;
+}
+
+.form-group input[type="file"] {
+    width: 100%;
+    padding: 0.75rem;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
+    font-size: 1rem;
+    background: white;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.form-group input[type="file"]:hover {
+    border-color: #1e3a5f;
+    box-shadow: 0 2px 8px rgba(30, 58, 95, 0.1);
+}
+
+.form-group input[type="file"]:focus {
+    outline: none;
+    border-color: #1e3a5f;
+    box-shadow: 0 0 0 3px rgba(30, 58, 95, 0.15);
+}
+
+.import-status {
+    margin-top: 1rem;
+}
+
+.import-status .alert {
+    margin-bottom: 0;
+}
+
+.btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.alert-info {
+    background-color: #e3f2fd;
+    color: #1976d2;
+    border: 1px solid #90caf9;
+}
+</style>
+{% endblock %}
+
+

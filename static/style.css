@@ -10,17 +10,18 @@ body {
     background: linear-gradient(135deg, #1a1a1a 0%, #2c3e50 50%, #1e3a5f 100%);
     background-attachment: fixed;
     color: #333;
-    line-height: 1.6;
+    line-height: 1.5;
     min-height: 100vh;
     overflow-x: hidden;
     overflow-y: auto;
     position: relative;
+    font-size: 0.9rem;
 }
 
 .container {
     max-width: 1400px;
     margin: 0 auto;
-    padding: 10px 20px 20px 20px;
+    padding: 8px 15px 15px 15px;
     position: relative;
     overflow: visible;
 }
@@ -52,20 +53,20 @@ body {
 }
 
 .nav-logo {
-    height: 40px;
+    height: 32px;
     width: auto;
     object-fit: contain;
 }
 
 .navbar h2 {
-    font-size: 1.1rem;
+    font-size: 0.95rem;
     font-weight: 700;
     color: #1e3a5f;
     margin: 0;
 }
 
 .navbar h1 {
-    font-size: 1.1rem;
+    font-size: 0.95rem;
     font-weight: 700;
     color: #1e3a5f;
 }
@@ -145,18 +146,18 @@ body {
 
 /* Buttons */
 .btn {
-    padding: 0.6rem 1.2rem;
+    padding: 0.45rem 0.9rem;
     border: none;
-    border-radius: 10px;
+    border-radius: 8px;
     cursor: pointer;
-    font-size: 0.9rem;
+    font-size: 0.8rem;
     font-weight: 600;
     text-decoration: none;
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.4rem;
     transition: all 0.3s ease;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
 }
 
 .btn:hover {
@@ -229,9 +230,9 @@ body {
 }
 
 .btn-small {
-    padding: 0.4rem 0.8rem;
-    font-size: 0.8rem;
-    border-radius: 8px;
+    padding: 0.3rem 0.6rem;
+    font-size: 0.75rem;
+    border-radius: 6px;
 }
 
 /* Alerts */
@@ -271,8 +272,8 @@ body {
     display: flex;
     justify-content: center;
     align-items: center;
-    gap: 1rem;
-    padding: 0.5rem 1rem;
+    gap: 0.75rem;
+    padding: 0.4rem 0.8rem;
     margin: 0 auto;
     max-width: fit-content;
     position: relative;
@@ -281,8 +282,8 @@ body {
     flex-wrap: nowrap;
     background: rgba(255, 255, 255, 0.98);
     backdrop-filter: blur(10px);
-    border-radius: 20px;
-    box-shadow: 0 2px 15px rgba(0, 0, 0, 0.1);
+    border-radius: 16px;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
     flex: 1;
 }
 
@@ -291,13 +292,13 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 70px;
-    height: 70px;
+    width: 55px;
+    height: 55px;
     border-radius: 50%;
     background: rgba(255, 255, 255, 0.98);
     backdrop-filter: blur(10px);
-    box-shadow: 0 2px 15px rgba(0, 0, 0, 0.1);
-    margin-right: 1rem;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+    margin-right: 0.75rem;
     flex-shrink: 0;
     animation: rotateLogo 10s linear infinite;
 }
@@ -312,10 +313,10 @@ body {
 }
 
 .logo-img {
-    height: 45px;
+    height: 35px;
     width: auto;
     object-fit: contain;
-    max-width: 60px;
+    max-width: 50px;
 }
 
 .dock-item {
@@ -327,8 +328,8 @@ body {
 }
 
 .dock-button {
-    width: 60px;
-    height: 60px;
+    width: 48px;
+    height: 48px;
     border-radius: 50%;
     border: none;
     background: rgba(255, 255, 255, 0.15);
@@ -338,7 +339,7 @@ body {
     align-items: center;
     justify-content: center;
     transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.2);
     position: relative;
     z-index: 10;
 }
@@ -428,7 +429,7 @@ body {
 }
 
 .dock-icon {
-    font-size: 1.8rem;
+    font-size: 1.4rem;
     line-height: 1;
 }
 
@@ -444,8 +445,7 @@ body {
     pointer-events: none;
     margin: 0;
     padding: 0;
-    left: 0;
-    top: 0;
+    /* left y top se establecen dinámicamente desde JavaScript */
 }
 
 .dock-item.active .dock-menu {
@@ -745,27 +745,208 @@ body {
 .calendar-view {
     width: 100%;
     margin-top: 1rem;
+    position: relative;
 }
 
 .weekly-calendar {
     display: grid;
-    grid-template-columns: repeat(7, 1fr);
-    gap: 1rem;
+    grid-template-columns: auto repeat(7, 1fr) auto;
+    gap: 0.4rem;
     background: rgba(255, 255, 255, 0.98);
     backdrop-filter: blur(10px);
-    border-radius: 12px;
-    padding: 1rem;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    border-radius: 10px;
+    padding: 0.75rem;
+    box-shadow: 0 3px 15px rgba(0, 0, 0, 0.15);
+    position: relative;
+    align-items: start;
+}
+
+.calendar-arrow {
+    position: sticky;
+    top: 50%;
+    transform: translateY(-50%);
+    background: rgba(30, 58, 95, 0.9);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 36px;
+    height: 36px;
+    font-size: 1.2rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
+    z-index: 10;
+    align-self: center;
+    flex-shrink: 0;
+    margin: 0 0.2rem;
+}
+
+.calendar-arrow:hover {
+    background: rgba(30, 58, 95, 1);
+    transform: translateY(-50%) scale(1.1);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+}
+
+.calendar-arrow:active {
+    transform: translateY(-50%) scale(0.95);
+}
+
+.calendar-arrow:disabled {
+    opacity: 0.5 !important;
+    cursor: not-allowed !important;
+    pointer-events: none;
+}
+
+.calendar-arrow-left {
+    grid-column: 1;
+    grid-row: 1;
+}
+
+.calendar-arrow-right {
+    grid-column: 9;
+    grid-row: 1;
+}
+
+.calendar-arrow-center {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: rgba(52, 152, 219, 0.9);
+    font-size: 1rem;
+    width: 40px;
+    height: 40px;
+    z-index: 1000;
+    transform: none;
+    border-radius: 8px;
+}
+
+.calendar-arrow-center:hover {
+    background: rgba(52, 152, 219, 1);
 }
 
 .calendar-day {
     border-right: 1px solid #e8e8e8;
-    min-height: 400px;
-    padding: 0.5rem;
+    min-height: 350px;
+    padding: 0.4rem;
+    background: rgba(255, 255, 255, 0.98);
 }
 
-.calendar-day:last-child {
+.calendar-day:last-of-type {
     border-right: none;
+}
+
+.calendar-day-weekend {
+    background: rgba(180, 180, 200, 0.98);
+    border-left: 3px solid rgba(30, 58, 95, 0.6);
+}
+
+.calendar-day-weekend .calendar-day-header {
+    background: rgba(30, 58, 95, 0.3);
+    border-radius: 6px;
+    padding: 0.5rem;
+    margin-bottom: 0.75rem;
+    border-bottom: 2px solid rgba(30, 58, 95, 0.5);
+}
+
+.calendar-day-weekend .calendar-day-header h4 {
+    color: #1e3a5f;
+    font-weight: 700;
+}
+
+.calendar-day-weekend .calendar-day-date {
+    color: #2c3e50;
+    font-weight: 600;
+}
+
+.calendar-day-weekend .calendar-task-item {
+    background: rgba(220, 220, 240, 0.95);
+    border-left-color: rgba(30, 58, 95, 0.7);
+}
+
+/* Estilos para drag and drop */
+.task-card-slide[draggable="true"] {
+    cursor: grab;
+    user-select: none;
+}
+
+.task-card-slide[draggable="true"]:active {
+    cursor: grabbing;
+}
+
+.calendar-day {
+    transition: all 0.2s ease;
+}
+
+.calendar-day.drag-over {
+    background: rgba(30, 58, 95, 0.1) !important;
+    border: 2px dashed #1e3a5f;
+    border-radius: 8px;
+    transform: scale(1.02);
+    box-shadow: 0 4px 12px rgba(30, 58, 95, 0.3);
+}
+
+.calendar-day-weekend.drag-over {
+    background: rgba(30, 58, 95, 0.2) !important;
+    border: 2px dashed #1e3a5f;
+}
+
+.drop-loading,
+.drop-success,
+.drop-error {
+    padding: 1rem;
+    margin: 0.5rem 0;
+    border-radius: 8px;
+    text-align: center;
+    font-weight: 600;
+    font-size: 0.9rem;
+    animation: fadeIn 0.3s ease;
+}
+
+.drop-loading {
+    background: rgba(52, 152, 219, 0.1);
+    color: #3498db;
+    border: 2px solid #3498db;
+}
+
+.drop-success {
+    background: rgba(39, 174, 96, 0.1);
+    color: #27ae60;
+    border: 2px solid #27ae60;
+}
+
+.drop-error {
+    background: rgba(231, 76, 60, 0.1);
+    color: #e74c3c;
+    border: 2px solid #e74c3c;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.calendar-day-weekend .calendar-day-header h4 {
+    color: #1e3a5f;
+    font-weight: 700;
+}
+
+.calendar-day-weekend .calendar-day-date {
+    color: #2c3e50;
+    font-weight: 600;
+}
+
+.calendar-day-weekend .calendar-task-item {
+    background: rgba(240, 240, 250, 0.9);
+    border-left-color: rgba(30, 58, 95, 0.5);
 }
 
 .calendar-day-header {
@@ -775,11 +956,19 @@ body {
 }
 
 .calendar-day-header h4 {
-    margin: 0;
+    margin: 0 0 0.2rem 0;
     color: #1e3a5f;
-    font-size: 1rem;
+    font-size: 0.85rem;
     font-weight: 600;
     text-align: center;
+}
+
+.calendar-day-date {
+    text-align: center;
+    font-size: 0.75rem;
+    color: #666;
+    font-weight: 500;
+    margin-top: 0.2rem;
 }
 
 .calendar-day-tasks {
@@ -790,9 +979,10 @@ body {
 
 .calendar-task-item {
     background: #f8f9fa;
-    border-left: 3px solid #1e3a5f;
-    border-radius: 6px;
-    padding: 0.5rem;
+    border-left: 2px solid #1e3a5f;
+    border-radius: 5px;
+    padding: 0.4rem;
+    margin-bottom: 0.4rem;
     cursor: pointer;
     transition: all 0.2s ease;
 }
@@ -803,11 +993,18 @@ body {
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
+.calendar-task-client {
+    font-size: 0.75rem;
+    color: #6c757d;
+    margin-bottom: 0.25rem;
+    font-style: italic;
+}
+
 .calendar-task-title {
-    font-size: 0.85rem;
+    font-size: 0.75rem;
     font-weight: 500;
     color: #2c3e50;
-    margin-bottom: 0.25rem;
+    margin-bottom: 0.2rem;
     line-height: 1.3;
 }
 
@@ -819,25 +1016,25 @@ body {
 
 .calendar-task-meta .priority-badge,
 .calendar-task-meta .category-badge {
-    font-size: 0.65rem;
-    padding: 0.2rem 0.4rem;
+    font-size: 0.6rem;
+    padding: 0.15rem 0.3rem;
 }
 
 /* Tasks Grid - Diseño moderno con cards */
 .tasks-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-    gap: 1.5rem;
-    margin-top: 1rem;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1rem;
+    margin-top: 0.75rem;
     align-items: start; /* Permite que cada tarjeta tenga su propia altura */
 }
 
 .task-card {
     background: rgba(255, 255, 255, 0.98);
     backdrop-filter: blur(10px);
-    border-radius: 12px;
-    padding: 1.5rem;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    border-radius: 10px;
+    padding: 1rem;
+    box-shadow: 0 3px 15px rgba(0, 0, 0, 0.15);
     border: 1px solid rgba(0, 0, 0, 0.05);
     transition: all 0.3s ease;
     position: relative;
@@ -872,18 +1069,18 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    margin-bottom: 1rem;
-    padding-bottom: 1rem;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.75rem;
     border-bottom: 1px solid #e8e8e8;
 }
 
 .task-card-title {
-    font-size: 1.1rem;
+    font-size: 0.95rem;
     font-weight: 600;
     color: #2c3e50;
     margin: 0;
     flex: 1;
-    line-height: 1.4;
+    line-height: 1.3;
     cursor: pointer;
     transition: all 0.3s ease;
 }
@@ -896,25 +1093,25 @@ body {
 }
 
 .task-card-body {
-    margin-bottom: 1rem;
+    margin-bottom: 0.75rem;
     flex: 1; /* Permite que el cuerpo crezca según el contenido */
 }
 
 .task-card-meta {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.75rem;
-    margin-bottom: 1rem;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
 }
 
 .task-card-client {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.4rem 0.8rem;
+    gap: 0.4rem;
+    padding: 0.3rem 0.6rem;
     background: rgba(30, 58, 95, 0.1);
-    border-radius: 8px;
-    font-size: 0.9rem;
+    border-radius: 6px;
+    font-size: 0.8rem;
     color: #1e3a5f;
     font-weight: 500;
 }
@@ -933,11 +1130,11 @@ body {
 .task-card-user {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.4rem 0.8rem;
+    gap: 0.4rem;
+    padding: 0.3rem 0.6rem;
     background: #e9ecef;
-    border-radius: 8px;
-    font-size: 0.85rem;
+    border-radius: 6px;
+    font-size: 0.75rem;
     color: #6c757d;
 }
 
@@ -945,9 +1142,9 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding-top: 1rem;
+    padding-top: 0.75rem;
     border-top: 1px solid #e8e8e8;
-    gap: 0.5rem;
+    gap: 0.4rem;
     margin-top: auto; /* Empuja el footer hacia abajo */
     position: relative; /* Para que el dropdown se posicione correctamente */
 }
@@ -1022,12 +1219,12 @@ body {
 }
 
 .btn-action-icon {
-    width: 32px;
-    height: 32px;
+    width: 28px;
+    height: 28px;
     padding: 0;
     border: none;
-    border-radius: 6px;
-    font-size: 1.2rem;
+    border-radius: 5px;
+    font-size: 1rem;
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -1235,16 +1432,16 @@ body {
 /* Badges */
 .status-badge,
 .priority-badge {
-    padding: 0.25rem 0.5rem;
-    border-radius: 12px;
-    font-size: 0.7rem;
+    padding: 0.2rem 0.4rem;
+    border-radius: 10px;
+    font-size: 0.65rem;
     font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.3px;
+    letter-spacing: 0.2px;
     display: inline-flex;
     align-items: center;
-    gap: 0.2rem;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+    gap: 0.15rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .status-open {
@@ -1284,16 +1481,16 @@ body {
 
 /* Category badges */
 .category-badge {
-    padding: 0.25rem 0.5rem;
-    border-radius: 12px;
-    font-size: 0.7rem;
+    padding: 0.2rem 0.4rem;
+    border-radius: 10px;
+    font-size: 0.65rem;
     font-weight: 600;
     text-transform: capitalize;
-    letter-spacing: 0.3px;
+    letter-spacing: 0.2px;
     display: inline-flex;
     align-items: center;
-    gap: 0.2rem;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+    gap: 0.15rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .category-administracion {
@@ -1487,16 +1684,21 @@ body {
     display: flex;
     justify-content: center;
     align-items: center;
+    padding: 1rem;
+    box-sizing: border-box;
 }
 
 .modal-content {
     background-color: white;
-    padding: 2rem;
+    padding: 1.5rem;
     border-radius: 12px;
-    max-width: 600px;
-    width: 90%;
+    max-width: 700px;
+    width: 100%;
+    max-height: 90vh;
     position: relative;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+    overflow-y: auto;
+    margin: auto;
 }
 
 .close {
@@ -1532,9 +1734,9 @@ body {
 
 h2 {
     color: white;
-    font-size: 2rem;
+    font-size: 1.5rem;
     font-weight: 700;
-    margin-bottom: 1.5rem;
+    margin-bottom: 1rem;
     text-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
     letter-spacing: -0.5px;
 }

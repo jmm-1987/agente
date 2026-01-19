@@ -155,6 +155,14 @@
                     <span class="dock-tooltip">Editar categorías</span>
                 </a>
             </div>
+            
+            <!-- Gestión de Base de Datos -->
+            <div class="dock-item dock-action">
+                <a href="{{ url_for('database_management') }}" class="dock-button dock-button-settings" title="Gestión de BD">
+                    <span class="dock-icon">💾</span>
+                    <span class="dock-tooltip">Gestión de BD</span>
+                </a>
+            </div>
                 
             <!-- Búsqueda -->
             <div class="dock-item" data-filter="search">
@@ -212,7 +220,7 @@
             <div class="slider-container">
                 <div class="slider-track">
                     {% for task in tasks_without_date %}
-                    <div class="task-card-slide">
+                    <div class="task-card-slide" draggable="true" data-task-id="{{ task.id }}" data-task-title="{{ task.title|e }}">
                         {% include 'task_card.html' %}
                     </div>
                     {% endfor %}
@@ -229,6 +237,10 @@
     <!-- Vista de calendario semanal -->
     <div class="calendar-view">
         <div class="weekly-calendar">
+            <!-- Flecha izquierda para retroceder semana -->
+            <button type="button" class="calendar-arrow calendar-arrow-left" onclick="navegarSemana({{ week_offset - 1 }})" title="Semana anterior">
+                ←
+            </button>
             {% set week_days = [
                 ('Lunes', 'Monday'),
                 ('Martes', 'Tuesday'),
@@ -239,36 +251,51 @@
                 ('Domingo', 'Sunday')
             ] %}
             {% for day_name, day_key in week_days %}
-            <div class="calendar-day">
+            <div class="calendar-day {% if day_key == 'Saturday' or day_key == 'Sunday' %}calendar-day-weekend{% endif %}" 
+                 data-day-key="{{ day_key }}"
+                 {% if week_dates and week_dates.get(day_key) %}data-day-date="{{ week_dates[day_key].strftime('%Y-%m-%d') }}"{% endif %}>
                 <div class="calendar-day-header">
                     <h4>{{ day_name }}</h4>
+                    {% if week_dates and week_dates.get(day_key) %}
+                        <div class="calendar-day-date">{{ week_dates[day_key].strftime('%d/%m/%Y') }}</div>
+                    {% endif %}
                 </div>
                 <div class="calendar-day-tasks">
-                    {% for task in tasks_with_date %}
-                        {% if task.task_date %}
-                            {% set task_weekday = task.task_date|date_weekday %}
-                            {% if task_weekday == day_key %}
-                                <div class="calendar-task-item">
-                                    <div class="calendar-task-title">{{ task.title }}</div>
-                                    <div class="calendar-task-meta">
-                                        <span class="priority-badge priority-{{ task.priority }}">{{ task.priority }}</span>
-                                        {% if task.category %}
-                                        {% set category_names = {
-                                            'administracion': '📋',
-                                            'averias': '🔧',
-                                            'clientes': '👤',
-                                            'servicios': '⚙️'
-                                        } %}
-                                        <span class="category-badge category-{{ task.category }}">{{ category_names.get(task.category, '') }}</span>
-                                        {% endif %}
-                                    </div>
+                    {% if tasks_by_weekday and tasks_by_weekday.get(day_key) %}
+                        {% for task in tasks_by_weekday[day_key] %}
+                            <div class="calendar-task-item" onclick="openEditTaskModal({{ task.id }})" title="Haz clic para editar">
+                                <div class="calendar-task-title">{{ task.title }}</div>
+                                {% if task.client_name_raw %}
+                                <div class="calendar-task-client">{{ task.client_name_raw }}</div>
+                                {% endif %}
+                                <div class="calendar-task-meta">
+                                    <span class="priority-badge priority-{{ task.priority }}">{{ task.priority }}</span>
+                                    {% if task.category %}
+                                    {% set category_names = {
+                                        'administracion': '📋',
+                                        'averias': '🔧',
+                                        'clientes': '👤',
+                                        'servicios': '⚙️'
+                                    } %}
+                                    <span class="category-badge category-{{ task.category }}">{{ category_names.get(task.category, '') }}</span>
+                                    {% endif %}
                                 </div>
-                            {% endif %}
-                        {% endif %}
-                    {% endfor %}
+                            </div>
+                        {% endfor %}
+                    {% endif %}
+                </div>
             </div>
-        </div>
-        {% endfor %}
+            {% endfor %}
+            <!-- Flecha derecha para avanzar semana -->
+            <button type="button" class="calendar-arrow calendar-arrow-right" onclick="navegarSemana({{ week_offset + 1 }})" title="Semana siguiente">
+                →
+            </button>
+            {% if week_offset != 0 %}
+            <!-- Botón para volver a semana actual -->
+            <button type="button" class="calendar-arrow calendar-arrow-center" onclick="navegarSemana(0)" title="Semana actual">
+                📅
+            </button>
+            {% endif %}
         </div>
     </div>
     {% else %}
@@ -308,7 +335,7 @@
 
 <!-- Modal para editar tarea -->
 <div id="editTaskModal" class="modal" style="display: none;">
-    <div class="modal-content" style="max-width: 700px; max-height: 90vh; overflow-y: auto;">
+    <div class="modal-content">
         <span class="close" onclick="closeEditTaskModal()">&times;</span>
         <h3 style="margin-top: 0;">✏️ Editar Tarea</h3>
         
@@ -484,7 +511,101 @@ function scrollSlider(button, direction) {
 function changeView(viewMode) {
     const url = new URL(window.location.href);
     url.searchParams.set('view_mode', viewMode);
+    // Resetear semana a la actual cuando cambiamos de vista
+    if (viewMode === 'calendar') {
+        url.searchParams.set('week_offset', '0');
+    }
     window.location.href = url.toString();
+}
+
+async function navegarSemana(weekOffset) {
+    const calendarView = document.querySelector('.calendar-view');
+    if (!calendarView) return;
+    
+    // Guardar posición del scroll relativa al calendario
+    const calendarRect = calendarView.getBoundingClientRect();
+    const scrollOffset = window.scrollY - calendarRect.top;
+    
+    // Deshabilitar botones durante la carga
+    const arrows = calendarView.querySelectorAll('.calendar-arrow');
+    arrows.forEach(arrow => {
+        arrow.disabled = true;
+        arrow.style.opacity = '0.5';
+        arrow.style.cursor = 'wait';
+    });
+    
+    // Mostrar indicador de carga sutil
+    calendarView.style.transition = 'opacity 0.2s ease';
+    calendarView.style.opacity = '0.7';
+    
+    try {
+        // Construir URL con todos los parámetros actuales
+        const url = new URL(window.location.href);
+        url.searchParams.set('week_offset', weekOffset);
+        url.searchParams.set('view_mode', 'calendar');
+        
+        // Hacer petición AJAX
+        const response = await fetch(url.toString());
+        if (!response.ok) {
+            throw new Error('Error en la respuesta del servidor');
+        }
+        
+        const html = await response.text();
+        
+        // Crear un elemento temporal para parsear el HTML
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = html;
+        
+        // Extraer solo el contenido del calendario
+        const newCalendarView = tempDiv.querySelector('.calendar-view');
+        
+        if (newCalendarView) {
+            // Guardar la posición actual del scroll antes de reemplazar
+            const currentScrollY = window.scrollY;
+            
+            // Reemplazar el contenido del calendario
+            calendarView.innerHTML = newCalendarView.innerHTML;
+            
+            // Reinicializar drag and drop para los nuevos días del calendario
+            const calendarDays = calendarView.querySelectorAll('.calendar-day[data-day-date]');
+            calendarDays.forEach(day => {
+                day.addEventListener('dragover', handleDragOver);
+                day.addEventListener('dragenter', handleDragEnter);
+                day.addEventListener('dragleave', handleDragLeave);
+                day.addEventListener('drop', handleDrop);
+            });
+            
+            // Esperar a que el navegador renderice el nuevo contenido
+            requestAnimationFrame(() => {
+                // Calcular la nueva posición del scroll
+                const newCalendarRect = calendarView.getBoundingClientRect();
+                const newScrollY = newCalendarRect.top + scrollOffset;
+                
+                // Restaurar posición del scroll sin animación
+                window.scrollTo({
+                    top: newScrollY,
+                    behavior: 'instant'
+                });
+                
+                // Restaurar opacidad
+                calendarView.style.opacity = '1';
+            });
+        }
+    } catch (error) {
+        console.error('Error al cargar la semana:', error);
+        // En caso de error, recargar la página completa
+        const url = new URL(window.location.href);
+        url.searchParams.set('week_offset', weekOffset);
+        url.searchParams.set('view_mode', 'calendar');
+        window.location.href = url.toString();
+    } finally {
+        // Restaurar botones
+        arrows.forEach(arrow => {
+            arrow.disabled = false;
+            arrow.style.opacity = '1';
+            arrow.style.cursor = 'pointer';
+        });
+    }
 }
 
 function toggleNoDateSection() {
@@ -501,6 +622,160 @@ function toggleNoDateSection() {
         icon.style.transform = 'rotate(180deg)';
         if (divider) divider.style.display = 'none';
     }
+}
+
+// Funcionalidad de Drag and Drop para tareas sin fecha
+document.addEventListener('DOMContentLoaded', function() {
+    // Inicializar drag and drop para tareas sin fecha
+    initDragAndDrop();
+});
+
+function initDragAndDrop() {
+    // Hacer las tareas sin fecha arrastrables
+    const taskCards = document.querySelectorAll('.task-card-slide[draggable="true"]');
+    taskCards.forEach(card => {
+        card.addEventListener('dragstart', handleDragStart);
+        card.addEventListener('dragend', handleDragEnd);
+    });
+    
+    // Hacer los días del calendario zonas de drop
+    const calendarDays = document.querySelectorAll('.calendar-day[data-day-date]');
+    calendarDays.forEach(day => {
+        day.addEventListener('dragover', handleDragOver);
+        day.addEventListener('dragenter', handleDragEnter);
+        day.addEventListener('dragleave', handleDragLeave);
+        day.addEventListener('drop', handleDrop);
+    });
+}
+
+let draggedElement = null;
+let draggedTaskId = null;
+
+function handleDragStart(e) {
+    draggedElement = this;
+    draggedTaskId = this.getAttribute('data-task-id');
+    const taskTitle = this.getAttribute('data-task-title');
+    
+    // Añadir datos al evento de arrastre
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/html', this.outerHTML);
+    e.dataTransfer.setData('task-id', draggedTaskId);
+    
+    // Estilo visual durante el arrastre
+    this.style.opacity = '0.5';
+    this.style.cursor = 'grabbing';
+    
+    // Crear imagen de arrastre personalizada
+    const dragImage = this.cloneNode(true);
+    dragImage.style.width = '200px';
+    dragImage.style.opacity = '0.8';
+    document.body.appendChild(dragImage);
+    e.dataTransfer.setDragImage(dragImage, 0, 0);
+    setTimeout(() => document.body.removeChild(dragImage), 0);
+}
+
+function handleDragEnd(e) {
+    // Restaurar estilo
+    if (draggedElement) {
+        draggedElement.style.opacity = '1';
+        draggedElement.style.cursor = 'grab';
+    }
+    
+    // Limpiar estilos de todos los días
+    document.querySelectorAll('.calendar-day').forEach(day => {
+        day.classList.remove('drag-over');
+    });
+    
+    draggedElement = null;
+    draggedTaskId = null;
+}
+
+function handleDragOver(e) {
+    if (e.preventDefault) {
+        e.preventDefault();
+    }
+    e.dataTransfer.dropEffect = 'move';
+    return false;
+}
+
+function handleDragEnter(e) {
+    this.classList.add('drag-over');
+}
+
+function handleDragLeave(e) {
+    // Solo quitar la clase si realmente salimos del elemento (no de un hijo)
+    if (!this.contains(e.relatedTarget)) {
+        this.classList.remove('drag-over');
+    }
+}
+
+async function handleDrop(e) {
+    if (e.stopPropagation) {
+        e.stopPropagation();
+    }
+    
+    this.classList.remove('drag-over');
+    
+    const taskId = e.dataTransfer.getData('task-id') || draggedTaskId;
+    const dayDate = this.getAttribute('data-day-date');
+    
+    if (!taskId || !dayDate) {
+        return false;
+    }
+    
+    // Mostrar indicador de carga
+    const dropZone = this.querySelector('.calendar-day-tasks');
+    const loadingIndicator = document.createElement('div');
+    loadingIndicator.className = 'drop-loading';
+    loadingIndicator.innerHTML = '⏳ Asignando fecha...';
+    dropZone.appendChild(loadingIndicator);
+    
+    try {
+        // Actualizar la fecha de la tarea
+        const response = await fetch(`/admin/tasks/${taskId}/set_date`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                task_date: dayDate
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok && data.success) {
+            // Eliminar la tarea del slider de tareas sin fecha
+            if (draggedElement) {
+                draggedElement.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+                draggedElement.style.opacity = '0';
+                draggedElement.style.transform = 'scale(0.8)';
+                setTimeout(() => {
+                    draggedElement.remove();
+                }, 300);
+            }
+            
+            // Mostrar mensaje de éxito
+            loadingIndicator.innerHTML = '✅ Fecha asignada';
+            loadingIndicator.className = 'drop-success';
+            
+            // Recargar la página después de un breve delay para mostrar el cambio
+            setTimeout(() => {
+                window.location.reload();
+            }, 1000);
+        } else {
+            throw new Error(data.error || 'Error al asignar fecha');
+        }
+    } catch (error) {
+        console.error('Error al asignar fecha:', error);
+        loadingIndicator.innerHTML = '❌ Error: ' + error.message;
+        loadingIndicator.className = 'drop-error';
+        setTimeout(() => {
+            loadingIndicator.remove();
+        }, 3000);
+    }
+    
+    return false;
 }
 
 function openTaskImages(taskId, imagesJson) {
@@ -584,29 +859,27 @@ function toggleDockMenu(button) {
             const buttonCenterX = buttonRect.left + (buttonRect.width / 2);
             const buttonBottomY = buttonRect.bottom;
             
-            // Hacer el menú visible temporalmente para medir su ancho
-            menu.style.visibility = 'hidden';
-            menu.style.opacity = '0';
+            // Limpiar estilos inline previos que puedan interferir
+            menu.style.removeProperty('left');
+            menu.style.removeProperty('top');
+            menu.style.removeProperty('right');
+            menu.style.removeProperty('bottom');
+            menu.style.removeProperty('margin');
+            menu.style.removeProperty('padding');
+            
+            // Establecer posición fija directamente debajo del botón
+            // El centro del menú se alineará con el centro del botón usando translateX(-50%)
             menu.style.position = 'fixed';
-            menu.style.display = 'block';
-            menu.style.transform = 'translateX(-50%) scale(1)';
             menu.style.left = buttonCenterX + 'px';
             menu.style.top = (buttonBottomY + 10) + 'px';
-            
-            // Forzar reflow para que el navegador calcule el tamaño
-            void menu.offsetWidth;
-            
-            // Establecer posición final del menú
-            // Usamos translateX(-50%) para centrar desde el punto del botón
-            menu.style.position = 'fixed';
-            menu.style.top = (buttonBottomY + 10) + 'px';
-            menu.style.left = buttonCenterX + 'px';
-            menu.style.transform = 'translateX(-50%) scale(1)';
             menu.style.margin = '0';
             menu.style.padding = '0';
             menu.style.zIndex = '10000';
-            menu.style.visibility = ''; // Restaurar visibilidad
-            menu.style.opacity = ''; // Restaurar opacidad
+            menu.style.transformOrigin = 'top center';
+            menu.style.display = 'block';
+            
+            // Asegurar que el transform se aplica correctamente
+            // El CSS aplicará translateX(-50%) cuando se añada la clase 'active'
         }
         
         dockItem.classList.add('active');
@@ -737,8 +1010,8 @@ async function openEditTaskModal(taskId) {
     const form = document.getElementById('editTaskForm');
     const saveButton = document.getElementById('saveTaskButton');
     
-    // Mostrar modal
-    modal.style.display = 'block';
+    // Mostrar modal centrado
+    modal.style.display = 'flex';
     
     // Deshabilitar botón mientras carga
     saveButton.disabled = true;

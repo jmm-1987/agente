@@ -1,5 +1,5 @@
 """Aplicación Flask principal con webhook de Telegram y web app"""
-from flask import Flask, request, jsonify, render_template, redirect, url_for, session
+from flask import Flask, request, jsonify, render_template, redirect, url_for, session, send_file
 from functools import wraps
 import logging
 import json
@@ -11,6 +11,10 @@ from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQu
 import config
 import database
 import telegram_bot
+import os
+import shutil
+from datetime import datetime
+from pathlib import Path
 
 # Configurar logging
 logging.basicConfig(
@@ -323,6 +327,7 @@ def tasks():
     view_mode = request.args.get('view_mode', 'list')
     search_query_raw = request.args.get('search', '').strip()
     search_query = search_query_raw.lower()
+    week_offset = request.args.get('week_offset', type=int, default=0)  # Offset de semanas (0 = semana actual)
     
     db = database.db
     tasks_list = db.get_tasks()
@@ -415,31 +420,64 @@ def tasks():
     for task in tasks_without_date:
         task['images'] = db.get_task_images(task['id'])
     
-    # Para vista de calendario, organizar tareas por día de la semana
+    # Para vista de calendario, calcular la semana y organizar tareas por día
     tasks_by_weekday = {}
+    week_dates = {}  # Fechas exactas de cada día de la semana
     if view_mode == 'calendar':
+        from datetime import timedelta
+        
+        # Calcular el lunes de la semana seleccionada
+        today = datetime.now().date()
+        days_since_monday = today.weekday()  # 0 = lunes, 6 = domingo
+        monday_of_week = today - timedelta(days=days_since_monday)
+        monday_of_selected_week = monday_of_week + timedelta(weeks=week_offset)
+        
+        # Calcular las fechas de cada día de la semana (lunes a domingo)
+        week_days_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+        for i, day_name in enumerate(week_days_order):
+            day_date = monday_of_selected_week + timedelta(days=i)
+            week_dates[day_name] = day_date
+        
+        # Filtrar tareas que pertenecen a la semana seleccionada
+        week_start = monday_of_selected_week
+        week_end = week_start + timedelta(days=6)
+        
         for task in tasks_with_date:
             try:
                 task_dt = datetime.fromisoformat(task['task_date'].replace('Z', '+00:00'))
-                weekday = task_dt.strftime('%A')  # Monday, Tuesday, etc.
-                if weekday not in tasks_by_weekday:
-                    tasks_by_weekday[weekday] = []
-                tasks_by_weekday[weekday].append(task)
-            except (ValueError, AttributeError):
-                try:
-                    task_dt = datetime.strptime(task['task_date'][:10], '%Y-%m-%d')
-                    weekday = task_dt.strftime('%A')
+                task_date_only = task_dt.date()
+                
+                # Verificar si la tarea está en la semana seleccionada
+                if week_start <= task_date_only <= week_end:
+                    weekday = task_dt.strftime('%A')  # Monday, Tuesday, etc.
                     if weekday not in tasks_by_weekday:
                         tasks_by_weekday[weekday] = []
                     tasks_by_weekday[weekday].append(task)
+            except (ValueError, AttributeError):
+                try:
+                    task_dt = datetime.strptime(task['task_date'][:10], '%Y-%m-%d')
+                    task_date_only = task_dt.date()
+                    
+                    # Verificar si la tarea está en la semana seleccionada
+                    if week_start <= task_date_only <= week_end:
+                        weekday = task_dt.strftime('%A')
+                        if weekday not in tasks_by_weekday:
+                            tasks_by_weekday[weekday] = []
+                        tasks_by_weekday[weekday].append(task)
                 except (ValueError, AttributeError):
                     pass
+        
+        # Ordenar tareas dentro de cada día por fecha/hora
+        for weekday in tasks_by_weekday:
+            tasks_by_weekday[weekday].sort(key=lambda t: t.get('task_date', '') or '')
     
     return render_template(
         'tasks.html',
         tasks_with_date=tasks_with_date,
         tasks_without_date=tasks_without_date,
         tasks_by_weekday=tasks_by_weekday,
+        week_dates=week_dates,
+        week_offset=week_offset,
         clients=clients,
         users=users,
         current_status=status,
@@ -533,6 +571,13 @@ def update_category(category_id):
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/admin/database')
+@login_required
+def database_management():
+    """Vista de gestión de base de datos"""
+    return render_template('database.html')
+
+
 @app.route('/admin/tasks/<int:task_id>/edit')
 @login_required
 def get_task_edit(task_id):
@@ -601,13 +646,52 @@ def update_task_solution(task_id):
     return redirect(url_for('tasks'))
 
 
+@app.route('/admin/tasks/<int:task_id>/set_date', methods=['POST'])
+@login_required
+def set_task_date(task_id):
+    """Asignar fecha a una tarea (usado para drag and drop)"""
+    try:
+        data = request.get_json()
+        task_date = data.get('task_date')
+        
+        if not task_date:
+            return jsonify({'error': 'Fecha no proporcionada'}), 400
+        
+        db = database.db
+        
+        # Validar que la tarea existe
+        task = db.get_task_by_id(task_id)
+        if not task:
+            return jsonify({'error': 'Tarea no encontrada'}), 404
+        
+        # Convertir la fecha al formato correcto (añadir hora si no la tiene)
+        from datetime import datetime
+        try:
+            # Si la fecha viene como 'YYYY-MM-DD', añadir hora por defecto (09:00)
+            if len(task_date) == 10:
+                task_date_dt = datetime.strptime(task_date, '%Y-%m-%d')
+                task_date_dt = task_date_dt.replace(hour=9, minute=0, second=0)
+            else:
+                task_date_dt = datetime.fromisoformat(task_date.replace('Z', '+00:00'))
+        except ValueError:
+            return jsonify({'error': 'Formato de fecha inválido'}), 400
+        
+        # Actualizar la tarea
+        success = db.update_task(task_id, task_date=task_date_dt)
+        
+        if success:
+            return jsonify({'success': True, 'message': 'Fecha asignada correctamente'})
+        else:
+            return jsonify({'error': 'No se pudo actualizar la tarea'}), 400
+    except Exception as e:
+        logger.error(f"Error asignando fecha a tarea {task_id}: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/admin/tasks/<int:task_id>/images/<int:image_id>')
 @login_required
 def get_task_image(task_id, image_id):
     """Sirve una imagen de una tarea"""
-    from flask import send_file
-    import os
-    
     db = database.db
     images = db.get_task_images(task_id)
     
@@ -624,6 +708,86 @@ def get_task_image(task_id, image_id):
         return jsonify({'error': 'Archivo no encontrado'}), 404
     
     return send_file(file_path, mimetype='image/jpeg')
+
+
+# ========== IMPORTAR/EXPORTAR BASE DE DATOS ==========
+
+@app.route('/descargar_db')
+@login_required
+def descargar_db():
+    """Descarga una copia de la base de datos"""
+    try:
+        db_path = config.SQLITE_PATH
+        
+        # Verificar que el archivo existe
+        if not os.path.exists(db_path):
+            return jsonify({'error': 'Base de datos no encontrada'}), 404
+        
+        # Generar nombre de archivo con timestamp
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f'app_db_{timestamp}.db'
+        
+        # Enviar el archivo
+        return send_file(
+            db_path,
+            as_attachment=True,
+            download_name=filename,
+            mimetype='application/x-sqlite3'
+        )
+    except Exception as e:
+        logger.error(f"Error descargando base de datos: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/importar_db', methods=['POST'])
+@login_required
+def importar_db():
+    """Importa una base de datos desde un archivo"""
+    try:
+        # Verificar que se haya enviado un archivo
+        if 'db_file' not in request.files:
+            return jsonify({'error': 'No se proporcionó archivo'}), 400
+        
+        file = request.files['db_file']
+        
+        # Verificar que el archivo no esté vacío
+        if file.filename == '':
+            return jsonify({'error': 'Archivo vacío'}), 400
+        
+        # Verificar que sea un archivo .db
+        if not file.filename.endswith('.db'):
+            return jsonify({'error': 'El archivo debe ser una base de datos SQLite (.db)'}), 400
+        
+        db_path = config.SQLITE_PATH
+        db_dir = Path(db_path).parent
+        db_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Crear respaldo de la base de datos actual si existe
+        backup_created = False
+        if os.path.exists(db_path):
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            backup_path = db_dir / f'app_db_backup_{timestamp}.db'
+            shutil.copy2(db_path, backup_path)
+            backup_created = True
+            logger.info(f"Respaldo creado: {backup_path}")
+        
+        # Guardar el archivo importado
+        file.save(db_path)
+        
+        # Reinicializar la conexión de la base de datos
+        database.db.init_db()
+        
+        logger.info(f"Base de datos importada exitosamente desde {file.filename}")
+        
+        return jsonify({
+            'success': True,
+            'message': 'Base de datos importada exitosamente',
+            'backup_created': backup_created
+        })
+        
+    except Exception as e:
+        logger.error(f"Error importando base de datos: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
 
 
 # ========== API JSON ==========
