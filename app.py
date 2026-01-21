@@ -692,6 +692,9 @@ def set_task_date(task_id):
 @login_required
 def get_task_image(task_id, image_id):
     """Sirve una imagen de una tarea"""
+    from sftp_storage import sftp_storage
+    import tempfile
+    
     db = database.db
     images = db.get_task_images(task_id)
     
@@ -703,11 +706,79 @@ def get_task_image(task_id, image_id):
     
     file_path = image['file_path']
     
-    # Verificar que el archivo existe
-    if not os.path.exists(file_path):
-        return jsonify({'error': 'Archivo no encontrado'}), 404
+    # Verificar si es una ruta remota de SFTP o local
+    is_remote_path = False
+    if file_path.startswith('/') and not os.path.exists(file_path):
+        # Podría ser una ruta remota de SFTP
+        # Verificar si tiene el formato de ruta remota (/images/tasks/...)
+        if file_path.startswith('/images/tasks/') or (sftp_storage.enabled and not os.path.exists(file_path)):
+            is_remote_path = True
     
-    return send_file(file_path, mimetype='image/jpeg')
+    if is_remote_path and sftp_storage.enabled:
+        # Descargar desde SFTP temporalmente
+        temp_path = None
+        try:
+            # Crear archivo temporal en el directorio de imágenes temporales
+            images_dir = os.path.join(config.TEMP_DIR, 'task_images')
+            os.makedirs(images_dir, exist_ok=True)
+            temp_path = os.path.join(images_dir, f"temp_{task_id}_{image_id}_{os.path.basename(file_path)}")
+            
+            # Descargar desde SFTP
+            sftp, transport = sftp_storage._get_connection()
+            try:
+                # Usar la ruta remota directamente (ya viene completa desde upload_image)
+                # Si la ruta empieza con /images/tasks/, usarla directamente
+                # Si no, construirla usando remote_path + nombre de archivo
+                if file_path.startswith('/'):
+                    remote_file_path = file_path
+                else:
+                    # Si no empieza con /, podría ser relativa
+                    remote_filename = os.path.basename(file_path)
+                    remote_file_path = f"{sftp_storage.remote_path}/{remote_filename}"
+                
+                logger.info(f"Descargando imagen desde SFTP: {remote_file_path}")
+                
+                # Descargar archivo
+                sftp.get(remote_file_path, temp_path)
+                logger.info(f"Imagen descargada temporalmente a: {temp_path}")
+                
+                # Verificar que el archivo se descargó correctamente
+                if not os.path.exists(temp_path) or os.path.getsize(temp_path) == 0:
+                    raise FileNotFoundError(f"Archivo descargado está vacío o no existe: {temp_path}")
+                
+                # Configurar limpieza del archivo temporal después de enviarlo
+                cleanup_path = temp_path
+                
+                @app.after_this_request
+                def cleanup_temp_file(response):
+                    try:
+                        if cleanup_path and os.path.exists(cleanup_path):
+                            os.remove(cleanup_path)
+                            logger.info(f"Archivo temporal borrado: {cleanup_path}")
+                    except Exception as e:
+                        logger.warning(f"No se pudo borrar archivo temporal: {e}")
+                    return response
+                
+                return send_file(temp_path, mimetype='image/jpeg')
+            finally:
+                sftp.close()
+                transport.close()
+        except Exception as e:
+            logger.error(f"Error descargando imagen desde SFTP: {e}", exc_info=True)
+            # Intentar borrar archivo temporal si existe
+            try:
+                if temp_path and os.path.exists(temp_path):
+                    os.remove(temp_path)
+            except:
+                pass
+            return jsonify({'error': f'Error descargando imagen: {str(e)}'}), 500
+    elif os.path.exists(file_path):
+        # Archivo local, servir directamente
+        return send_file(file_path, mimetype='image/jpeg')
+    else:
+        # Archivo no encontrado ni local ni remoto
+        logger.error(f"Imagen no encontrada: {file_path}")
+        return jsonify({'error': 'Archivo no encontrado'}), 404
 
 
 # ========== IMPORTAR/EXPORTAR BASE DE DATOS ==========

@@ -431,7 +431,52 @@ class Database:
         return self._execute_with_retry(operation)
     
     def delete_task(self, task_id: int) -> bool:
-        """Elimina tarea"""
+        """Elimina tarea y sus imágenes asociadas (SFTP y locales)"""
+        import os
+        
+        # Obtener imágenes de la tarea antes de eliminarla
+        images = self.get_task_images(task_id)
+        
+        # Eliminar imágenes del SFTP y archivos locales si existen
+        if images:
+            try:
+                from sftp_storage import sftp_storage
+                
+                for image in images:
+                    file_path = image.get('file_path')
+                    if file_path:
+                        # Eliminar del SFTP si está habilitado
+                        if sftp_storage.enabled:
+                            # Verificar si es una ruta remota (empieza con /images/tasks/ o no existe localmente)
+                            is_remote = (file_path.startswith('/images/tasks/') or 
+                                        (file_path.startswith('/') and not os.path.exists(file_path)))
+                            
+                            if is_remote:
+                                try:
+                                    sftp_storage.delete_image(file_path)
+                                    logger.info(f"Imagen eliminada del SFTP: {file_path}")
+                                except Exception as e:
+                                    logger.error(f"Error borrando imagen del SFTP: {e}")
+                        
+                        # Eliminar archivo local si existe (puede ser un archivo temporal o local)
+                        if os.path.exists(file_path):
+                            try:
+                                os.remove(file_path)
+                                logger.info(f"Archivo local eliminado: {file_path}")
+                            except Exception as e:
+                                logger.warning(f"No se pudo eliminar archivo local {file_path}: {e}")
+            except ImportError:
+                # Si sftp_storage no está disponible, solo intentar eliminar archivos locales
+                for image in images:
+                    file_path = image.get('file_path')
+                    if file_path and os.path.exists(file_path):
+                        try:
+                            os.remove(file_path)
+                            logger.info(f"Archivo local eliminado: {file_path}")
+                        except Exception as e:
+                            logger.warning(f"No se pudo eliminar archivo local {file_path}: {e}")
+        
+        # Eliminar la tarea (las imágenes se eliminarán automáticamente por CASCADE)
         conn = self.get_connection()
         cursor = conn.cursor()
         cursor.execute('DELETE FROM tasks WHERE id = ?', (task_id,))
