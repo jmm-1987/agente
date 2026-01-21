@@ -59,15 +59,14 @@
                     {{ task.status }}
                 </span>
                 {% if task.category %}
-                {% set category_names = {
-                    'administracion': '📋 Administración',
-                    'averias': '🔧 Averías',
-                    'clientes': '👤 Clientes',
-                    'servicios': '⚙️ Servicios'
-                } %}
-                <span class="category-badge category-{{ task.category }}">
-                    {{ category_names.get(task.category, task.category) }}
+                {% set category_obj = categories|selectattr('name', 'equalto', task.category)|first %}
+                {% if category_obj %}
+                <span class="category-badge category-{{ task.category }}" style="background: {{ category_obj.color }};">
+                    {{ category_obj.icon }} {{ category_obj.display_name or category_obj.name }}
                 </span>
+                {% else %}
+                <span class="category-badge category-{{ task.category }}">{{ task.category }}</span>
+                {% endif %}
                 {% endif %}
             </div>
             <div class="action-buttons-row">

@@ -76,16 +76,8 @@
                             <span>🔴 Urgente</span>
                         </label>
                         <label class="dock-option">
-                            <input type="radio" name="priority" value="high" {% if current_priority == 'high' %}checked{% endif %}>
-                            <span>🟠 Alta</span>
-                        </label>
-                        <label class="dock-option">
                             <input type="radio" name="priority" value="normal" {% if current_priority == 'normal' %}checked{% endif %}>
                             <span>🟡 Normal</span>
-                        </label>
-                        <label class="dock-option">
-                            <input type="radio" name="priority" value="low" {% if current_priority == 'low' %}checked{% endif %}>
-                            <span>🟢 Baja</span>
                         </label>
                     </div>
                 </div>
@@ -271,13 +263,14 @@
                                 <div class="calendar-task-meta">
                                     <span class="priority-badge priority-{{ task.priority }}">{{ task.priority }}</span>
                                     {% if task.category %}
-                                    {% set category_names = {
-                                        'administracion': '📋',
-                                        'averias': '🔧',
-                                        'clientes': '👤',
-                                        'servicios': '⚙️'
-                                    } %}
-                                    <span class="category-badge category-{{ task.category }}">{{ category_names.get(task.category, '') }}</span>
+                                    {% set category_obj = categories|selectattr('name', 'equalto', task.category)|first %}
+                                    {% if category_obj %}
+                                    <span class="category-badge category-{{ task.category }}" style="background: {{ category_obj.color }};">
+                                        {{ category_obj.icon }} {{ category_obj.display_name or category_obj.name }}
+                                    </span>
+                                    {% else %}
+                                    <span class="category-badge category-{{ task.category }}">{{ task.category }}</span>
+                                    {% endif %}
                                     {% endif %}
                                 </div>
                             </div>
@@ -365,9 +358,7 @@
                 <div class="form-group">
                     <label for="editPriority" style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #333;">Prioridad:</label>
                     <select id="editPriority" name="priority" required style="width: 100%; padding: 0.75rem; border: 1.5px solid #e0e0e0; border-radius: 6px; font-size: 1rem;">
-                        <option value="low">🟢 Baja</option>
                         <option value="normal">🟡 Normal</option>
-                        <option value="high">🟠 Alta</option>
                         <option value="urgent">🔴 Urgente</option>
                     </select>
                 </div>

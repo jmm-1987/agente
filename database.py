@@ -45,7 +45,7 @@ class Database:
                 title TEXT NOT NULL,
                 description TEXT,
                 status TEXT DEFAULT 'open' CHECK(status IN ('open', 'completed', 'cancelled')),
-                priority TEXT DEFAULT 'normal' CHECK(priority IN ('low', 'normal', 'high', 'urgent')),
+                priority TEXT DEFAULT 'normal' CHECK(priority IN ('normal', 'urgent')),
                 task_date TIMESTAMP,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -73,10 +73,13 @@ class Database:
         
         # Añadir columna 'category' si no existe (migración)
         try:
-            cursor.execute('ALTER TABLE tasks ADD COLUMN category TEXT CHECK(category IN ("administracion", "averias", "clientes", "servicios"))')
+            cursor.execute('ALTER TABLE tasks ADD COLUMN category TEXT')
         except sqlite3.OperationalError:
             # La columna ya existe, ignorar
             pass
+        
+        # Actualizar el CHECK constraint si existe (SQLite no soporta ALTER COLUMN, así que recreamos si es necesario)
+        # Nota: SQLite no permite modificar CHECK constraints fácilmente, así que simplemente permitimos cualquier texto
         
         # Tabla de categorías
         cursor.execute('''
@@ -91,16 +94,25 @@ class Database:
             )
         ''')
         
-        # Insertar categorías por defecto si no existen
+        # Eliminar categorías antiguas y insertar nuevas categorías por defecto
+        cursor.execute('DELETE FROM categories')
+        
+        # Insertar nuevas categorías
         default_categories = [
-            ('administracion', '📋', '#3498db', 'Administración'),
-            ('averias', '🔧', '#e74c3c', 'Averías'),
-            ('clientes', '👤', '#2ecc71', 'Clientes'),
-            ('servicios', '⚙️', '#f39c12', 'Servicios')
+            ('ideas', '💡', '#9b59b6', 'Ideas'),
+            ('incidencias', '🔧', '#e74c3c', 'Incidencias'),
+            ('reclamaciones', '⚠️', '#e67e22', 'Reclamaciones'),
+            ('presupuestos', '💰', '#f39c12', 'Presupuestos'),
+            ('visitas', '🚪', '#3498db', 'Visitas'),
+            ('administracion', '📋', '#2ecc71', 'Administración'),
+            ('en_espera', '⏳', '#95a5a6', 'En espera'),
+            ('delegado', '👥', '#16a085', 'Delegado'),
+            ('llamar', '📞', '#e91e63', 'Llamar'),
+            ('personal', '👤', '#34495e', 'Personal')
         ]
         for cat_name, icon, color, display_name in default_categories:
             cursor.execute('''
-                INSERT OR IGNORE INTO categories (name, icon, color, display_name)
+                INSERT INTO categories (name, icon, color, display_name)
                 VALUES (?, ?, ?, ?)
             ''', (cat_name, icon, color, display_name))
         
@@ -114,6 +126,13 @@ class Database:
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
             )
+        ''')
+        
+        # Migrar prioridades antiguas (high y low) a normal
+        cursor.execute('''
+            UPDATE tasks 
+            SET priority = 'normal' 
+            WHERE priority IN ('high', 'low')
         ''')
         
         # Índices

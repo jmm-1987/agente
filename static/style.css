@@ -1493,23 +1493,60 @@ body {
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
-.category-administracion {
+/* Estilos para categorías - ahora se aplican dinámicamente desde la BD */
+.category-badge {
     background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
     color: white;
 }
 
-.category-averias {
-    background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+/* Mantener compatibilidad con categorías antiguas si existen */
+.category-administracion {
+    background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%);
     color: white;
 }
 
-.category-clientes {
+.category-ideas {
     background: linear-gradient(135deg, #9b59b6 0%, #8e44ad 100%);
     color: white;
 }
 
-.category-servicios {
+.category-incidencias {
+    background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+    color: white;
+}
+
+.category-reclamaciones {
+    background: linear-gradient(135deg, #e67e22 0%, #d35400 100%);
+    color: white;
+}
+
+.category-presupuestos {
     background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%);
+    color: white;
+}
+
+.category-visitas {
+    background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+    color: white;
+}
+
+.category-en_espera {
+    background: linear-gradient(135deg, #95a5a6 0%, #7f8c8d 100%);
+    color: white;
+}
+
+.category-delegado {
+    background: linear-gradient(135deg, #16a085 0%, #138d75 100%);
+    color: white;
+}
+
+.category-llamar {
+    background: linear-gradient(135deg, #e91e63 0%, #c2185b 100%);
+    color: white;
+}
+
+.category-personal {
+    background: linear-gradient(135deg, #34495e 0%, #2c3e50 100%);
     color: white;
 }
 

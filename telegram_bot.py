@@ -103,6 +103,19 @@ class TelegramBotHandler:
             del self.user_states[user.id]
             return
         
+        # Verificar si el usuario está creando tarea con imagen
+        if user_state and user_state.get('action') == 'creating_task_with_image':
+            # Procesar como creación de tarea normal pero con imagen adjunta
+            parsed = self.parser.parse(text)
+            await self._handle_create_task(update, context, parsed, user)
+            return
+        
+        # Verificar si el usuario está esperando prioridad
+        if user_state and user_state.get('action') == 'waiting_priority':
+            # Procesar respuesta de prioridad
+            await self._handle_priority_response(update, context, text, user)
+            return
+        
         # Verificar si el usuario está esperando categoría
         if user_state and user_state.get('action') == 'waiting_category':
             # Procesar respuesta de categoría
@@ -291,6 +304,14 @@ class TelegramBotHandler:
         task_date = entities.get('date')
         client_info = entities.get('client')
         
+        # Verificar si hay una imagen pendiente de adjuntar
+        user_state = self.user_states.get(user.id)
+        photo_file_id = None
+        photo_file_unique_id = None
+        if user_state and user_state.get('action') == 'creating_task_with_image':
+            photo_file_id = user_state.get('photo_file_id')
+            photo_file_unique_id = user_state.get('photo_file_unique_id')
+        
         # Manejar cliente si existe
         client_id = None
         client_name_raw = None
@@ -319,7 +340,9 @@ class TelegramBotHandler:
             'priority': priority,
             'task_date': task_date,
             'client_id': client_id,
-            'client_name_raw': client_name_raw
+            'client_name_raw': client_name_raw,
+            'photo_file_id': photo_file_id,
+            'photo_file_unique_id': photo_file_unique_id
         }
         
         # Preguntar por categoría con botones
@@ -327,16 +350,26 @@ class TelegramBotHandler:
     
     async def _ask_category(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Pregunta por la categoría de la tarea"""
-        keyboard = [
-            [
-                InlineKeyboardButton("📋 Administración", callback_data="category:administracion"),
-                InlineKeyboardButton("🔧 Averías", callback_data="category:averias")
-            ],
-            [
-                InlineKeyboardButton("👤 Clientes", callback_data="category:clientes"),
-                InlineKeyboardButton("⚙️ Servicios", callback_data="category:servicios")
-            ]
-        ]
+        # Obtener categorías de la base de datos
+        categories = self.db.get_all_categories()
+        
+        # Crear botones pequeños (2 por fila para que quepan bien)
+        keyboard = []
+        row = []
+        for category in categories:
+            # Botones pequeños con solo el icono y nombre corto
+            button_text = f"{category['icon']} {category['display_name']}"
+            row.append(InlineKeyboardButton(button_text, callback_data=f"category:{category['name']}"))
+            
+            # Cada fila tiene 2 botones
+            if len(row) == 2:
+                keyboard.append(row)
+                row = []
+        
+        # Añadir la última fila si tiene elementos
+        if row:
+            keyboard.append(row)
+        
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         reply_keyboard = self._get_reply_keyboard()
@@ -358,6 +391,65 @@ class TelegramBotHandler:
                     reply_markup=reply_markup
                 )
     
+    async def _ask_priority(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Pregunta por la prioridad de la tarea"""
+        keyboard = [
+            [
+                InlineKeyboardButton("🔴 Urgente", callback_data="priority:urgent"),
+                InlineKeyboardButton("🟡 Normal", callback_data="priority:normal")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        reply_keyboard = self._get_reply_keyboard()
+        
+        if hasattr(update, 'message') and update.message:
+            await update.message.reply_text(
+                "⚡ ¿Cuál es la prioridad de esta tarea?",
+                reply_markup=reply_markup
+            )
+        elif context and hasattr(context, 'message'):
+            await context.message.reply_text(
+                "⚡ ¿Cuál es la prioridad de esta tarea?",
+                reply_markup=reply_markup
+            )
+        else:
+            if hasattr(update, 'effective_message'):
+                await update.effective_message.reply_text(
+                    "⚡ ¿Cuál es la prioridad de esta tarea?",
+                    reply_markup=reply_markup
+                )
+            elif hasattr(update, 'callback_query') and update.callback_query:
+                await update.callback_query.edit_message_text(
+                    "⚡ ¿Cuál es la prioridad de esta tarea?",
+                    reply_markup=reply_markup
+                )
+    
+    async def _handle_priority_response(self, update: Update, context: ContextTypes.DEFAULT_TYPE,
+                                       priority: str, user):
+        """Maneja la respuesta de prioridad y crea la tarea"""
+        user_state = self.user_states.get(user.id)
+        if not user_state or user_state.get('action') != 'waiting_priority':
+            return
+        
+        # Validar prioridad
+        if priority not in ['urgent', 'normal']:
+            priority = 'normal'
+        
+        # Actualizar prioridad en el estado
+        user_state['priority'] = priority
+        category = user_state.get('category')
+        
+        if not category:
+            await update.message.reply_text(
+                "❌ Error: No se encontró la categoría.",
+                reply_markup=self._get_reply_keyboard()
+            )
+            return
+        
+        # Crear tarea con categoría y prioridad
+        await self._create_task_with_category(update, context, user, category, user_state)
+    
     async def _handle_category_response(self, update: Update, context: ContextTypes.DEFAULT_TYPE,
                                        transcript: str, user):
         """Maneja la respuesta de categoría desde texto o callback"""
@@ -365,27 +457,52 @@ class TelegramBotHandler:
         if not user_state or user_state.get('action') != 'waiting_category':
             return
         
-        # Mapear texto a categoría
+        # Mapear texto a categoría - obtener categorías de la BD
         transcript_lower = transcript.lower().strip()
+        categories = self.db.get_all_categories()
+        
+        category = None
+        # Buscar coincidencia por nombre o display_name
+        for cat in categories:
+            cat_name_lower = cat['name'].lower()
+            display_name_lower = (cat['display_name'] or '').lower()
+            
+            # Verificar si el texto contiene el nombre o display_name de la categoría
+            if (cat_name_lower in transcript_lower or 
+                display_name_lower in transcript_lower or
+                transcript_lower in cat_name_lower or
+                transcript_lower in display_name_lower):
+                category = cat['name']
+                break
+        
+        # Mapeo adicional para variaciones comunes
         category_map = {
+            'idea': 'ideas',
+            'ideas': 'ideas',
+            'incidencia': 'incidencias',
+            'incidencias': 'incidencias',
+            'reclamacion': 'reclamaciones',
+            'reclamaciones': 'reclamaciones',
+            'presupuesto': 'presupuestos',
+            'presupuestos': 'presupuestos',
+            'visita': 'visitas',
+            'visitas': 'visitas',
             'administracion': 'administracion',
             'administración': 'administracion',
             'admin': 'administracion',
-            'averias': 'averias',
-            'averías': 'averias',
-            'averia': 'averias',
-            'avería': 'averias',
-            'clientes': 'clientes',
-            'cliente': 'clientes',
-            'servicios': 'servicios',
-            'servicio': 'servicios'
+            'espera': 'en_espera',
+            'en espera': 'en_espera',
+            'delegado': 'delegado',
+            'llamar': 'llamar',
+            'llamada': 'llamar',
+            'personal': 'personal'
         }
         
-        category = None
-        for key, value in category_map.items():
-            if key in transcript_lower:
-                category = value
-                break
+        if not category:
+            for key, value in category_map.items():
+                if key in transcript_lower:
+                    category = value
+                    break
         
         if not category:
             await update.message.reply_text(
@@ -395,8 +512,10 @@ class TelegramBotHandler:
             await self._ask_category(update, context)
             return
         
-        # Crear tarea con categoría
-        await self._create_task_with_category(update, context, user, category, user_state)
+        # Guardar categoría y preguntar por prioridad
+        user_state['category'] = category
+        user_state['action'] = 'waiting_priority'
+        await self._ask_priority(update, context)
     
     async def _create_task_with_category(self, update: Update, context: ContextTypes.DEFAULT_TYPE,
                                          user, category: str, user_state: dict):
@@ -414,20 +533,48 @@ class TelegramBotHandler:
             category=category
         )
         
+        # Si hay una imagen pendiente, adjuntarla automáticamente
+        photo_file_id = user_state.get('photo_file_id')
+        photo_file_unique_id = user_state.get('photo_file_unique_id')
+        
+        if photo_file_id and photo_file_unique_id:
+            try:
+                # Crear objeto Photo simulado
+                class PhotoFile:
+                    def __init__(self, file_id, file_unique_id):
+                        self.file_id = file_id
+                        self.file_unique_id = file_unique_id
+                
+                photo_file = PhotoFile(photo_file_id, photo_file_unique_id)
+                
+                # Descargar y guardar la imagen
+                file = await context.bot.get_file(photo_file.file_id)
+                images_dir = os.path.join(config.TEMP_DIR, 'task_images')
+                os.makedirs(images_dir, exist_ok=True)
+                file_path = os.path.join(images_dir, f"{task_id}_{photo_file.file_unique_id}.jpg")
+                await file.download_to_drive(file_path)
+                
+                # Añadir imagen a la tarea
+                self.db.add_image_to_task(task_id, photo_file.file_id, file_path)
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Error adjuntando imagen a nueva tarea: {e}", exc_info=True)
+        
         # Limpiar estado
         del self.user_states[user.id]
         
         # Si es callback query, editar mensaje primero y luego enviar confirmación
         if hasattr(update, 'callback_query') and update.callback_query:
-            category_names = {
-                'administracion': '📋 Administración',
-                'averias': '🔧 Averías',
-                'clientes': '👤 Clientes',
-                'servicios': '⚙️ Servicios'
-            }
-            await update.callback_query.edit_message_text(
-                f"✅ Categoría seleccionada: {category_names.get(category, category)}"
-            )
+            categories = self.db.get_all_categories()
+            category_obj = next((c for c in categories if c['name'] == category), None)
+            category_display = category_obj['display_name'] if category_obj else category
+            
+            message_text = f"✅ Categoría seleccionada: {category_obj['icon']} {category_display}"
+            if photo_file_id:
+                message_text += "\n📷 Imagen adjuntada"
+            
+            await update.callback_query.edit_message_text(message_text)
             # Crear un objeto Update simulado para usar _send_task_confirmation
             class FakeUpdate:
                 def __init__(self, message):
@@ -519,13 +666,18 @@ class TelegramBotHandler:
         
         category_info = ""
         if task.get('category'):
-            category_names = {
-                'administracion': '📋 Administración',
-                'averias': '🔧 Averías',
-                'clientes': '👤 Clientes',
-                'servicios': '⚙️ Servicios'
-            }
-            category_info = f"\n📂 Categoría: {category_names.get(task['category'], task['category'])}"
+            categories = self.db.get_all_categories()
+            category_obj = next((c for c in categories if c['name'] == task['category']), None)
+            if category_obj:
+                category_info = f"\n📂 Categoría: {category_obj['icon']} {category_obj['display_name']}"
+            else:
+                category_info = f"\n📂 Categoría: {task['category']}"
+        
+        # Verificar si hay imágenes adjuntas
+        images = self.db.get_task_images(task_id)
+        image_info = ""
+        if images:
+            image_info = f"\n📷 Imágenes adjuntas: {len(images)}"
         
         message = (
             f"✅ Tarea creada:\n\n"
@@ -534,6 +686,7 @@ class TelegramBotHandler:
             f"{date_info}"
             f"{category_info}"
             f"\n{priority_emoji} Prioridad: {task['priority']}"
+            f"{image_info}"
         )
         
         # Botones
@@ -906,6 +1059,54 @@ class TelegramBotHandler:
             user_state = self.user_states.get(user.id)
             
             if user_state and user_state.get('action') == 'waiting_category':
+                # Guardar categoría y preguntar por prioridad
+                user_state['category'] = category
+                user_state['action'] = 'waiting_priority'
+                
+                # Obtener información de la categoría para mostrar
+                categories = self.db.get_all_categories()
+                category_obj = next((c for c in categories if c['name'] == category), None)
+                category_display = category_obj['display_name'] if category_obj else category
+                
+                await query.edit_message_text(
+                    f"✅ Categoría seleccionada: {category_obj['icon']} {category_display}\n\n"
+                    f"⚡ ¿Cuál es la prioridad de esta tarea?",
+                    reply_markup=InlineKeyboardMarkup([
+                        [
+                            InlineKeyboardButton("🔴 Urgente", callback_data="priority:urgent"),
+                            InlineKeyboardButton("🟡 Normal", callback_data="priority:normal")
+                        ]
+                    ])
+                )
+            else:
+                await query.edit_message_text("❌ Error: Estado no válido.")
+        
+        elif action == 'priority':
+            priority = parts[1]
+            user = update.effective_user
+            user_state = self.user_states.get(user.id)
+            
+            if user_state and user_state.get('action') == 'waiting_priority':
+                # Validar prioridad
+                if priority not in ['urgent', 'normal']:
+                    priority = 'normal'
+                
+                # Actualizar prioridad en el estado
+                user_state['priority'] = priority
+                category = user_state.get('category')
+                
+                if not category:
+                    await query.edit_message_text("❌ Error: No se encontró la categoría.")
+                    return
+                
+                # Mostrar confirmación de prioridad seleccionada
+                priority_emoji = "🔴" if priority == 'urgent' else "🟡"
+                priority_text = "Urgente" if priority == 'urgent' else "Normal"
+                await query.edit_message_text(
+                    f"✅ Prioridad seleccionada: {priority_emoji} {priority_text}\n\n"
+                    f"⏳ Creando tarea..."
+                )
+                
                 # Crear un objeto Update simulado para pasar al método
                 class FakeUpdate:
                     def __init__(self, callback_query):
@@ -917,6 +1118,47 @@ class TelegramBotHandler:
                 await self._create_task_with_category(fake_update, context, user, category, user_state)
             else:
                 await query.edit_message_text("❌ Error: Estado no válido.")
+        
+        elif action == 'image_action':
+            # Manejar acción de imagen: attach_existing o create_new
+            action_type = parts[1]
+            user = update.effective_user
+            user_state = self.user_states.get(user.id)
+            
+            if not user_state or user_state.get('action') != 'waiting_image_action':
+                await query.edit_message_text("❌ Error: Estado no válido.")
+                return
+            
+            photo_file_id = user_state.get('photo_file_id')
+            photo_file_unique_id = user_state.get('photo_file_unique_id')
+            
+            if not photo_file_id:
+                await query.edit_message_text("❌ Error: No se encontró la imagen.")
+                return
+            
+            # Crear un objeto Photo simulado
+            class PhotoFile:
+                def __init__(self, file_id, file_unique_id):
+                    self.file_id = file_id
+                    self.file_unique_id = file_unique_id
+            
+            photo_file = PhotoFile(photo_file_id, photo_file_unique_id)
+            
+            if action_type == 'attach_existing':
+                # Mostrar lista de tareas existentes
+                await self._ask_task_for_image_from_callback(query, update, context, photo_file, user)
+            elif action_type == 'create_new':
+                # Iniciar creación de nueva tarea con imagen adjunta
+                await query.edit_message_text(
+                    "➕ Creando nueva tarea con imagen adjunta...\n\n"
+                    "Por favor, envía el texto de la tarea (título y descripción)."
+                )
+                # Cambiar estado para crear tarea con imagen
+                self.user_states[user.id] = {
+                    'action': 'creating_task_with_image',
+                    'photo_file_id': photo_file_id,
+                    'photo_file_unique_id': photo_file_unique_id
+                }
         
         elif action == 'assign_image_to_task':
             task_id = int(parts[1])
@@ -969,16 +1211,23 @@ class TelegramBotHandler:
     
     async def _ask_category_from_message(self, message, update):
         """Pregunta por categoría desde un mensaje"""
-        keyboard = [
-            [
-                InlineKeyboardButton("📋 Administración", callback_data="category:administracion"),
-                InlineKeyboardButton("🔧 Averías", callback_data="category:averias")
-            ],
-            [
-                InlineKeyboardButton("👤 Clientes", callback_data="category:clientes"),
-                InlineKeyboardButton("⚙️ Servicios", callback_data="category:servicios")
-            ]
-        ]
+        # Obtener categorías de la base de datos
+        categories = self.db.get_all_categories()
+        
+        # Crear botones pequeños (2 por fila)
+        keyboard = []
+        row = []
+        for category in categories:
+            button_text = f"{category['icon']} {category['display_name']}"
+            row.append(InlineKeyboardButton(button_text, callback_data=f"category:{category['name']}"))
+            
+            if len(row) == 2:
+                keyboard.append(row)
+                row = []
+        
+        if row:
+            keyboard.append(row)
+        
         reply_markup = InlineKeyboardMarkup(keyboard)
         await message.reply_text(
             "📂 ¿A qué categoría pertenece esta tarea?",
@@ -1284,8 +1533,33 @@ class TelegramBotHandler:
             del self.user_states[user.id]
             return
         
-        # Si no hay estado, preguntar a qué tarea asignar la imagen
-        await self._ask_task_for_image(update, context, photo_file, user)
+        # Si no hay estado, preguntar qué hacer con la imagen
+        await self._ask_image_action(update, context, photo_file, user)
+    
+    async def _ask_image_action(self, update: Update, context: ContextTypes.DEFAULT_TYPE, 
+                                photo_file, user):
+        """Pregunta qué hacer con la imagen: adjuntar a tarea existente o crear nueva"""
+        # Guardar el file_id de la imagen en el estado
+        self.user_states[user.id] = {
+            'action': 'waiting_image_action',
+            'photo_file_id': photo_file.file_id,
+            'photo_file_unique_id': photo_file.file_unique_id
+        }
+        
+        # Crear botones de acción
+        keyboard = [
+            [
+                InlineKeyboardButton("📎 Adjuntar a tarea existente", callback_data="image_action:attach_existing"),
+                InlineKeyboardButton("➕ Crear nueva tarea", callback_data="image_action:create_new")
+            ]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(
+            "📷 Imagen recibida. ¿Qué quieres hacer?",
+            reply_markup=reply_markup
+        )
     
     async def _ask_task_for_image(self, update: Update, context: ContextTypes.DEFAULT_TYPE, 
                                   photo_file, user):
@@ -1298,14 +1572,14 @@ class TelegramBotHandler:
                 "❌ No tienes tareas abiertas disponibles. Crea una tarea primero.",
                 reply_markup=self._get_reply_keyboard()
             )
+            # Cambiar acción para permitir crear nueva tarea
+            if user.id in self.user_states:
+                self.user_states[user.id]['action'] = 'waiting_image_action'
             return
         
-        # Guardar el file_id de la imagen en el estado
-        self.user_states[user.id] = {
-            'action': 'waiting_task_for_image',
-            'photo_file_id': photo_file.file_id,
-            'photo_file_unique_id': photo_file.file_unique_id
-        }
+        # Actualizar estado para esperar selección de tarea
+        if user.id in self.user_states:
+            self.user_states[user.id]['action'] = 'waiting_task_for_image'
         
         # Crear botones con las tareas (solo abiertas)
         keyboard = []
@@ -1319,8 +1593,52 @@ class TelegramBotHandler:
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await update.message.reply_text(
-            "📷 Imagen recibida. ¿A qué tarea abierta quieres asignarla?",
+        # Si es callback query, editar mensaje; si no, enviar nuevo mensaje
+        if hasattr(update, 'callback_query') and update.callback_query:
+            await update.callback_query.edit_message_text(
+                "📷 ¿A qué tarea abierta quieres asignarla?",
+                reply_markup=reply_markup
+            )
+        else:
+            await update.message.reply_text(
+                "📷 ¿A qué tarea abierta quieres asignarla?",
+                reply_markup=reply_markup
+            )
+    
+    async def _ask_task_for_image_from_callback(self, query, update: Update, context: ContextTypes.DEFAULT_TYPE,
+                                                photo_file, user):
+        """Pregunta a qué tarea asignar la imagen desde un callback"""
+        # Obtener solo tareas abiertas del usuario
+        tasks = self.db.get_tasks(user_id=user.id, status='open', limit=20)
+        
+        if not tasks:
+            await query.edit_message_text(
+                "❌ No tienes tareas abiertas disponibles. Crea una tarea primero.",
+                reply_markup=None
+            )
+            # Cambiar acción para permitir crear nueva tarea
+            if user.id in self.user_states:
+                self.user_states[user.id]['action'] = 'waiting_image_action'
+            return
+        
+        # Actualizar estado para esperar selección de tarea
+        if user.id in self.user_states:
+            self.user_states[user.id]['action'] = 'waiting_task_for_image'
+        
+        # Crear botones con las tareas (solo abiertas)
+        keyboard = []
+        for task in tasks[:10]:  # Máximo 10 tareas
+            task_title = task['title'][:35] + "..." if len(task['title']) > 35 else task['title']
+            
+            keyboard.append([InlineKeyboardButton(
+                f"📝 {task_title}",
+                callback_data=f"assign_image_to_task:{task['id']}"
+            )])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            "📷 ¿A qué tarea abierta quieres asignarla?",
             reply_markup=reply_markup
         )
     
