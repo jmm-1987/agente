@@ -13,186 +13,179 @@
         <div class="dock-container">
             <!-- Vista -->
             <div class="dock-item" data-filter="view_mode">
-                <button type="button" class="dock-button" onclick="toggleDockMenu(this)" title="Vista">
-                    <span class="dock-icon">📋</span>
-                    <span class="dock-tooltip">Vista</span>
-                </button>
-                <div class="dock-menu">
-                    <div class="dock-menu-content">
-                        <label class="dock-option">
-                            <input type="radio" name="view_mode" value="list" {% if view_mode != 'calendar' %}checked{% endif %} onchange="changeView('list')">
-                            <span>📋 Lista</span>
-                        </label>
-                        <label class="dock-option">
-                            <input type="radio" name="view_mode" value="calendar" {% if view_mode == 'calendar' %}checked{% endif %} onchange="changeView('calendar')">
-                            <span>📅 Semana</span>
-                        </label>
-                    </div>
+              <button type="button" class="dock-button" onclick="toggleDockMenu(this)" title="Vista">
+                <span class="dock-icon">📋</span>
+                <span class="dock-tooltip">Vista</span>
+              </button>
+              <div class="dock-menu">
+                <div class="dock-menu-content">
+                  <label class="dock-option">
+                    <input type="radio" name="view_mode" value="list" {% if view_mode != 'calendar' %}checked{% endif %} onchange="changeView('list')">
+                    <span>📋 Lista</span>
+                  </label>
+                  <label class="dock-option">
+                    <input type="radio" name="view_mode" value="calendar" {% if view_mode == 'calendar' %}checked{% endif %} onchange="changeView('calendar')">
+                    <span>📅 Semana</span>
+                  </label>
                 </div>
+              </div>
             </div>
-            
+          
             <!-- Estado -->
             <div class="dock-item" data-filter="status">
-                <button type="button" class="dock-button" onclick="toggleDockMenu(this)" title="Estado">
-                    <span class="dock-icon">📊</span>
-                    <span class="dock-tooltip">Estado</span>
-                </button>
-                <div class="dock-menu">
-                    <div class="dock-menu-content">
-                        <label class="dock-option">
-                            <input type="radio" name="status" value="all" {% if current_status == 'all' %}checked{% endif %}>
-                            <span>📊 Todos</span>
-                        </label>
-                        <label class="dock-option">
-                            <input type="radio" name="status" value="open" {% if current_status == 'open' or current_status == '' %}checked{% endif %}>
-                            <span>🟦 Abiertas</span>
-                        </label>
-                        <label class="dock-option">
-                            <input type="radio" name="status" value="completed" {% if current_status == 'completed' %}checked{% endif %}>
-                            <span>✅ Completadas</span>
-                        </label>
-                        <label class="dock-option">
-                            <input type="radio" name="status" value="cancelled" {% if current_status == 'cancelled' %}checked{% endif %}>
-                            <span>❌ Canceladas</span>
-                        </label>
-                    </div>
+              <button type="button" class="dock-button" onclick="toggleDockMenu(this)" title="Estado">
+                <span class="dock-icon">📊</span>
+                <span class="dock-tooltip">Estado</span>
+              </button>
+              <div class="dock-menu">
+                <div class="dock-menu-content">
+                  <label class="dock-option">
+                    <input type="radio" name="status" value="all" {% if current_status == 'all' %}checked{% endif %}>
+                    <span>📊 Todos</span>
+                  </label>
+                  <label class="dock-option">
+                    <input type="radio" name="status" value="open" {% if current_status == 'open' or current_status == '' %}checked{% endif %}>
+                    <span>🟦 Abiertas</span>
+                  </label>
+                  <label class="dock-option">
+                    <input type="radio" name="status" value="completed" {% if current_status == 'completed' %}checked{% endif %}>
+                    <span>✅ Completadas</span>
+                  </label>
+                  <label class="dock-option">
+                    <input type="radio" name="status" value="cancelled" {% if current_status == 'cancelled' %}checked{% endif %}>
+                    <span>❌ Canceladas</span>
+                  </label>
                 </div>
-</div>
-
+              </div>
+            </div>
+          
             <!-- Prioridad -->
             <div class="dock-item" data-filter="priority">
-                <button type="button" class="dock-button" onclick="toggleDockMenu(this)" title="Prioridad">
-                    <span class="dock-icon">⚡</span>
-                    <span class="dock-tooltip">Prioridad</span>
-                </button>
-                <div class="dock-menu">
-                    <div class="dock-menu-content">
-                        <label class="dock-option">
-                            <input type="radio" name="priority" value="all" {% if current_priority == 'all' %}checked{% endif %}>
-                            <span>⚡ Todas</span>
-                        </label>
-                        <label class="dock-option">
-                            <input type="radio" name="priority" value="urgent" {% if current_priority == 'urgent' %}checked{% endif %}>
-                            <span>🔴 Urgente</span>
-                        </label>
-                        <label class="dock-option">
-                            <input type="radio" name="priority" value="normal" {% if current_priority == 'normal' %}checked{% endif %}>
-                            <span>🟡 Normal</span>
-                        </label>
-                    </div>
+              <button type="button" class="dock-button" onclick="toggleDockMenu(this)" title="Prioridad">
+                <span class="dock-icon">⚡</span>
+                <span class="dock-tooltip">Prioridad</span>
+              </button>
+              <div class="dock-menu">
+                <div class="dock-menu-content">
+                  <label class="dock-option">
+                    <input type="radio" name="priority" value="all" {% if current_priority == 'all' %}checked{% endif %}>
+                    <span>⚡ Todas</span>
+                  </label>
+                  <label class="dock-option">
+                    <input type="radio" name="priority" value="urgent" {% if current_priority == 'urgent' %}checked{% endif %}>
+                    <span>🔴 Urgente</span>
+                  </label>
+                  <label class="dock-option">
+                    <input type="radio" name="priority" value="normal" {% if current_priority == 'normal' %}checked{% endif %}>
+                    <span>🟡 Normal</span>
+                  </label>
                 </div>
+              </div>
             </div>
-            
+          
             <!-- Usuario -->
             <div class="dock-item" data-filter="user_id">
-                <button type="button" class="dock-button" onclick="toggleDockMenu(this)" title="Usuario">
-                    <span class="dock-icon">👤</span>
-                    <span class="dock-tooltip">Usuario</span>
-                </button>
-                <div class="dock-menu">
-                    <div class="dock-menu-content">
-                        <label class="dock-option">
-                            <input type="radio" name="user_id" value="" {% if not current_user_id %}checked{% endif %}>
-                            <span>👤 Todos</span>
-                        </label>
-                        {% for uid, uname in users.items() %}
-                        <label class="dock-option">
-                            <input type="radio" name="user_id" value="{{ uid }}" {% if current_user_id == uid %}checked{% endif %}>
-                            <span>{{ uname }}</span>
-                        </label>
-                        {% endfor %}
-                    </div>
+              <button type="button" class="dock-button" onclick="toggleDockMenu(this)" title="Usuario">
+                <span class="dock-icon">👤</span>
+                <span class="dock-tooltip">Usuario</span>
+              </button>
+              <div class="dock-menu">
+                <div class="dock-menu-content">
+                  <label class="dock-option">
+                    <input type="radio" name="user_id" value="" {% if not current_user_id %}checked{% endif %}>
+                    <span>👤 Todos</span>
+                  </label>
+                  {% for uid, uname in users.items() %}
+                  <label class="dock-option">
+                    <input type="radio" name="user_id" value="{{ uid }}" {% if current_user_id == uid %}checked{% endif %}>
+                    <span>{{ uname }}</span>
+                  </label>
+                  {% endfor %}
                 </div>
+              </div>
             </div>
-            
+          
             <!-- Fecha -->
             <div class="dock-item" data-filter="task_date">
-                <button type="button" class="dock-button" onclick="toggleDockMenu(this)" title="Fecha">
-                    <span class="dock-icon">📅</span>
-                    <span class="dock-tooltip">Fecha</span>
-                </button>
-                <div class="dock-menu">
-                    <div class="dock-menu-content">
-                        <input type="date" name="task_date" value="{{ current_task_date }}" class="dock-date-input" placeholder="Fecha">
-                    </div>
+              <button type="button" class="dock-button" onclick="toggleDockMenu(this)" title="Fecha">
+                <span class="dock-icon">📅</span>
+                <span class="dock-tooltip">Fecha</span>
+              </button>
+              <div class="dock-menu">
+                <div class="dock-menu-content">
+                  <input type="date" name="task_date" value="{{ current_task_date }}" class="dock-date-input" placeholder="Fecha">
                 </div>
-                </div>
-                
+              </div>
+            </div>
+          
             <!-- Categoría -->
             <div class="dock-item" data-filter="category">
-                <button type="button" class="dock-button" onclick="toggleDockMenu(this)" title="Categoría">
-                    <span class="dock-icon">📂</span>
-                    <span class="dock-tooltip">Categoría</span>
-                </button>
-                <div class="dock-menu">
-                    <div class="dock-menu-content">
-                        <label class="dock-option">
-                            <input type="radio" name="category" value="all" {% if current_category == 'all' or not current_category %}checked{% endif %}>
-                            <span>📂 Todas</span>
-                        </label>
-                        {% for cat in categories %}
-                        <label class="dock-option">
-                            <input type="radio" name="category" value="{{ cat.name }}" {% if current_category == cat.name %}checked{% endif %}>
-                            <span style="color: {{ cat.color }};">{{ cat.icon }} {{ cat.display_name or cat.name }}</span>
-                        </label>
-                        {% endfor %}
-                    </div>
+              <button type="button" class="dock-button" onclick="toggleDockMenu(this)" title="Categoría">
+                <span class="dock-icon">📂</span>
+                <span class="dock-tooltip">Categoría</span>
+              </button>
+              <div class="dock-menu">
+                <div class="dock-menu-content">
+                  <label class="dock-option">
+                    <input type="radio" name="category" value="all" {% if current_category == 'all' or not current_category %}checked{% endif %}>
+                    <span>📂 Todas</span>
+                  </label>
+                  {% for cat in categories %}
+                  <label class="dock-option">
+                    <input type="radio" name="category" value="{{ cat.name }}" {% if current_category == cat.name %}checked{% endif %}>
+                    <span style="color: {{ cat.color }};">{{ cat.icon }} {{ cat.display_name or cat.name }}</span>
+                  </label>
+                  {% endfor %}
                 </div>
+              </div>
             </div>
-            
+          
             <!-- Editar Categorías -->
             <div class="dock-item dock-action">
-                <a href="{{ url_for('categories') }}" class="dock-button dock-button-settings" title="Editar categorías">
-                    <span class="dock-icon">⚙️</span>
-                    <span class="dock-tooltip">Editar categorías</span>
-                </a>
+              <a href="{{ url_for('categories') }}" class="dock-button dock-button-settings" title="Editar categorías">
+                <span class="dock-icon">⚙️</span>
+                <span class="dock-tooltip">Editar categorías</span>
+              </a>
             </div>
-            
-            <!-- Gestión de Base de Datos -->
-            <div class="dock-item dock-action">
-                <a href="{{ url_for('database_management') }}" class="dock-button dock-button-settings" title="Gestión de BD">
-                    <span class="dock-icon">💾</span>
-                    <span class="dock-tooltip">Gestión de BD</span>
-                </a>
-            </div>
-                
+          
             <!-- Búsqueda -->
             <div class="dock-item" data-filter="search">
-                <button type="button" class="dock-button" onclick="toggleDockMenu(this)" title="Buscar">
-                    <span class="dock-icon">🔍</span>
-                    <span class="dock-tooltip">Buscar</span>
-                </button>
-                <div class="dock-menu">
-                    <div class="dock-menu-content">
-                        <input type="text" name="search" value="{{ current_search or '' }}" class="dock-search-input" placeholder="Buscar...">
-                    </div>
+              <button type="button" class="dock-button" onclick="toggleDockMenu(this)" title="Buscar">
+                <span class="dock-icon">🔍</span>
+                <span class="dock-tooltip">Buscar</span>
+              </button>
+              <div class="dock-menu">
+                <div class="dock-menu-content">
+                  <input type="text" name="search" value="{{ current_search or '' }}" class="dock-search-input" placeholder="Buscar...">
                 </div>
+              </div>
             </div>
-            
+          
             <!-- Filtrar -->
             <div class="dock-item dock-action">
-                <button type="submit" class="dock-button dock-button-primary" title="Filtrar">
-                    <span class="dock-icon">✓</span>
-                    <span class="dock-tooltip">Filtrar</span>
-                    </button>
+              <button type="submit" class="dock-button dock-button-primary" title="Filtrar">
+                <span class="dock-icon">✓</span>
+                <span class="dock-tooltip">Filtrar</span>
+              </button>
             </div>
-            
+          
             <!-- Limpiar -->
             <div class="dock-item dock-action">
-                <a href="{{ url_for('tasks') }}" class="dock-button dock-button-secondary" title="Limpiar">
-                    <span class="dock-icon">🔄</span>
-                    <span class="dock-tooltip">Limpiar</span>
-                </a>
+              <a href="{{ url_for('tasks') }}" class="dock-button dock-button-secondary" title="Limpiar">
+                <span class="dock-icon">🔄</span>
+                <span class="dock-tooltip">Limpiar</span>
+              </a>
             </div>
-            
+          
             <!-- Logout -->
             <div class="dock-item dock-action">
-                <a href="{{ url_for('logout') }}" class="dock-button dock-button-danger" title="Cerrar sesión">
-                    <span class="dock-icon">✕</span>
-                    <span class="dock-tooltip">Cerrar sesión</span>
-                </a>
+              <a href="{{ url_for('logout') }}" class="dock-button dock-button-danger" title="Cerrar sesión">
+                <span class="dock-icon">✕</span>
+                <span class="dock-tooltip">Cerrar sesión</span>
+              </a>
             </div>
-        </div>
+          </div>
+          
     </form>
 </div>
 
@@ -833,49 +826,14 @@ function closeImagesModal() {
 function toggleDockMenu(button) {
     const dockItem = button.closest('.dock-item');
     const isActive = dockItem.classList.contains('active');
-    
-    // Cerrar todos los menús
-    document.querySelectorAll('.dock-item').forEach(item => {
-        item.classList.remove('active');
-    });
-    
-    // Abrir el menú seleccionado si no estaba activo
+
+    document.querySelectorAll('.dock-item').forEach(item => item.classList.remove('active'));
+
     if (!isActive) {
-        // Calcular posición del botón
-        const buttonRect = button.getBoundingClientRect();
-        const menu = dockItem.querySelector('.dock-menu');
-        
-        if (menu) {
-            // Calcular el centro exacto del botón relativo al viewport
-            const buttonCenterX = buttonRect.left + (buttonRect.width / 2);
-            const buttonBottomY = buttonRect.bottom;
-            
-            // Limpiar estilos inline previos que puedan interferir
-            menu.style.removeProperty('left');
-            menu.style.removeProperty('top');
-            menu.style.removeProperty('right');
-            menu.style.removeProperty('bottom');
-            menu.style.removeProperty('margin');
-            menu.style.removeProperty('padding');
-            
-            // Establecer posición fija directamente debajo del botón
-            // El centro del menú se alineará con el centro del botón usando translateX(-50%)
-            menu.style.position = 'fixed';
-            menu.style.left = buttonCenterX + 'px';
-            menu.style.top = (buttonBottomY + 10) + 'px';
-            menu.style.margin = '0';
-            menu.style.padding = '0';
-            menu.style.zIndex = '10000';
-            menu.style.transformOrigin = 'top center';
-            menu.style.display = 'block';
-            
-            // Asegurar que el transform se aplica correctamente
-            // El CSS aplicará translateX(-50%) cuando se añada la clase 'active'
-        }
-        
         dockItem.classList.add('active');
     }
 }
+
 
 // Auto-enviar formulario al cambiar opciones
 document.addEventListener('DOMContentLoaded', function() {

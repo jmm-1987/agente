@@ -9,7 +9,7 @@ import parser
 import audio_pipeline
 import config
 from utils import normalize_text
-from sftp_storage import sftp_storage
+from sftp_storage import sftp_storage, PARAMIKO_AVAILABLE
 
 logger = logging.getLogger(__name__)
 
@@ -1660,20 +1660,32 @@ class TelegramBotHandler:
         
         # Intentar subir a SFTP si está disponible
         remote_path = local_file_path  # Por defecto, usar ruta local
+        logger.info(f"SFTP habilitado: {sftp_storage.enabled}")
         if sftp_storage.enabled:
             try:
+                logger.info(f"Intentando subir imagen a SFTP: {local_file_path}")
                 remote_filename = f"{task_id}_{photo_file.file_unique_id}.jpg"
+                logger.info(f"Nombre remoto: {remote_filename}, Ruta remota: {sftp_storage.remote_path}")
                 remote_path = sftp_storage.upload_image(local_file_path, remote_filename)
-                logger.info(f"Imagen subida a SFTP: {remote_path}")
+                logger.info(f"✅ Imagen subida exitosamente a SFTP: {remote_path}")
                 # Borrar archivo local después de subir a SFTP
                 try:
                     os.remove(local_file_path)
+                    logger.info(f"Archivo local borrado: {local_file_path}")
                 except Exception as e:
                     logger.warning(f"No se pudo borrar archivo local después de subir a SFTP: {e}")
             except Exception as e:
-                logger.error(f"Error subiendo imagen a SFTP, usando almacenamiento local: {e}")
+                logger.error(f"❌ Error subiendo imagen a SFTP, usando almacenamiento local: {e}", exc_info=True)
                 # Si falla SFTP, mantener archivo local
                 remote_path = local_file_path
+        else:
+            logger.warning(
+                f"⚠️ SFTP no está habilitado. "
+                f"Host: {sftp_storage.host or 'NO CONFIGURADO'}, "
+                f"Username: {sftp_storage.username or 'NO CONFIGURADO'}, "
+                f"Password: {'✓' if sftp_storage.password else '✗'}, "
+                f"Paramiko disponible: {PARAMIKO_AVAILABLE}"
+            )
         
         return remote_path
     

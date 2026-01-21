@@ -435,17 +435,20 @@ body {
 
 /* Menú desplegable */
 .dock-menu {
-    position: fixed;
+    position: absolute;
+    left: 50%;
+    top: calc(100% + 10px);
     transform: translateX(-50%) scale(0);
     transform-origin: top center;
     opacity: 0;
     visibility: hidden;
-    transition: opacity 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), visibility 0.4s, transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+    transition: opacity 0.4s cubic-bezier(0.34, 1.56, 0.64, 1),
+                visibility 0.4s,
+                transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
     z-index: 10000;
     pointer-events: none;
     margin: 0;
     padding: 0;
-    /* left y top se establecen dinámicamente desde JavaScript */
 }
 
 .dock-item.active .dock-menu {
@@ -453,7 +456,6 @@ body {
     visibility: visible;
     pointer-events: all;
     transform: translateX(-50%) scale(1);
-    /* La posición exacta se maneja desde JavaScript */
 }
 
 .dock-menu-content {
@@ -1793,5 +1795,78 @@ h2 {
     font-size: 4rem;
     margin-bottom: 1rem;
     opacity: 0.5;
+}
+
+/* ========== ESTILOS MÓVILES PARA EL DOCK ========== */
+@media (max-width: 768px) {
+    /* Ajustes del contenedor del dock en móvil */
+    .filter-form {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+
+    .dock-container {
+        gap: 0.5rem;
+        flex-wrap: wrap;
+        justify-content: center;
+        padding: 0.4rem 0.5rem;
+    }
+
+    /* Ocultar botones no deseados en móvil */
+    .dock-item[data-filter="view_mode"],
+    .dock-item[data-filter="status"],
+    .dock-item[data-filter="user_id"],
+    .dock-item[data-filter="task_date"] {
+        display: none;
+    }
+
+    /* Ocultar el botón de editar categorías */
+    .dock-item.dock-action a[href*="categories"],
+    .dock-item.dock-action a[href*="categories"] ~ *,
+    .dock-item.dock-action:has(a[href*="categories"]) {
+        display: none !important;
+    }
+
+    /* Botones del dock más pequeños en móvil */
+    .dock-button {
+        width: 40px;
+        height: 40px;
+    }
+
+    .dock-icon {
+        font-size: 1.2rem;
+    }
+
+    /* Logo más pequeño en móvil */
+    .logo-container {
+        width: 44px;
+        height: 44px;
+    }
+
+    .logo-img {
+        height: 28px;
+    }
+
+    /* Menú desplegable ajustado para móvil */
+    .dock-menu-content {
+        min-width: 160px;
+        max-width: calc(100vw - 40px);
+        font-size: 0.85rem;
+    }
+
+    .dock-option {
+        padding: 0.6rem 0.8rem;
+        font-size: 0.85rem;
+    }
+
+    /* Tooltip oculto en móvil */
+    .dock-tooltip {
+        display: none;
+    }
+
+    /* Ajustes del filtro sticky en móvil */
+    .filters {
+        padding: 0.5rem;
+    }
 }
 
