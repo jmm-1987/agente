@@ -3,11 +3,15 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKe
 from telegram.ext import ContextTypes
 from datetime import datetime, timedelta
 import os
+import logging
 import database
 import parser
 import audio_pipeline
 import config
 from utils import normalize_text
+from sftp_storage import sftp_storage
+
+logger = logging.getLogger(__name__)
 
 
 class TelegramBotHandler:
@@ -547,18 +551,12 @@ class TelegramBotHandler:
                 
                 photo_file = PhotoFile(photo_file_id, photo_file_unique_id)
                 
-                # Descargar y guardar la imagen
-                file = await context.bot.get_file(photo_file.file_id)
-                images_dir = os.path.join(config.TEMP_DIR, 'task_images')
-                os.makedirs(images_dir, exist_ok=True)
-                file_path = os.path.join(images_dir, f"{task_id}_{photo_file.file_unique_id}.jpg")
-                await file.download_to_drive(file_path)
+                # Guardar imagen (local y SFTP)
+                remote_path = await self._save_image_to_storage(context, photo_file, task_id)
                 
-                # Añadir imagen a la tarea
-                self.db.add_image_to_task(task_id, photo_file.file_id, file_path)
+                # Añadir imagen a la tarea (guardar ruta remota)
+                self.db.add_image_to_task(task_id, photo_file.file_id, remote_path)
             except Exception as e:
-                import logging
-                logger = logging.getLogger(__name__)
                 logger.error(f"Error adjuntando imagen a nueva tarea: {e}", exc_info=True)
         
         # Limpiar estado
@@ -1642,25 +1640,54 @@ class TelegramBotHandler:
             reply_markup=reply_markup
         )
     
+    async def _save_image_to_storage(self, context: ContextTypes.DEFAULT_TYPE, photo_file, task_id: int) -> str:
+        """
+        Descarga una imagen de Telegram y la guarda en SFTP (si está disponible) o localmente
+        
+        Returns:
+            Ruta remota del archivo (SFTP) o ruta local si SFTP no está disponible
+        """
+        # Descargar la imagen de Telegram
+        file = await context.bot.get_file(photo_file.file_id)
+        
+        # Crear directorio temporal para imágenes si no existe
+        images_dir = os.path.join(config.TEMP_DIR, 'task_images')
+        os.makedirs(images_dir, exist_ok=True)
+        
+        # Guardar imagen localmente temporalmente
+        local_file_path = os.path.join(images_dir, f"{task_id}_{photo_file.file_unique_id}.jpg")
+        await file.download_to_drive(local_file_path)
+        
+        # Intentar subir a SFTP si está disponible
+        remote_path = local_file_path  # Por defecto, usar ruta local
+        if sftp_storage.enabled:
+            try:
+                remote_filename = f"{task_id}_{photo_file.file_unique_id}.jpg"
+                remote_path = sftp_storage.upload_image(local_file_path, remote_filename)
+                logger.info(f"Imagen subida a SFTP: {remote_path}")
+                # Borrar archivo local después de subir a SFTP
+                try:
+                    os.remove(local_file_path)
+                except Exception as e:
+                    logger.warning(f"No se pudo borrar archivo local después de subir a SFTP: {e}")
+            except Exception as e:
+                logger.error(f"Error subiendo imagen a SFTP, usando almacenamiento local: {e}")
+                # Si falla SFTP, mantener archivo local
+                remote_path = local_file_path
+        
+        return remote_path
+    
     async def _assign_image_to_task(self, update: Update, context: ContextTypes.DEFAULT_TYPE,
                                    task_id: int, photo_file, user):
         """Asigna una imagen a una tarea"""
         reply_markup = self._get_reply_keyboard()
         
         try:
-            # Descargar la imagen
-            file = await context.bot.get_file(photo_file.file_id)
+            # Guardar imagen (local y SFTP)
+            remote_path = await self._save_image_to_storage(context, photo_file, task_id)
             
-            # Crear directorio para imágenes si no existe
-            images_dir = os.path.join(config.TEMP_DIR, 'task_images')
-            os.makedirs(images_dir, exist_ok=True)
-            
-            # Guardar imagen localmente
-            file_path = os.path.join(images_dir, f"{task_id}_{photo_file.file_unique_id}.jpg")
-            await file.download_to_drive(file_path)
-            
-            # Guardar en base de datos
-            self.db.add_image_to_task(task_id, photo_file.file_id, file_path)
+            # Guardar en base de datos (ruta remota)
+            self.db.add_image_to_task(task_id, photo_file.file_id, remote_path)
             
             task = self.db.get_task_by_id(task_id)
             task_title = task['title'] if task else f"Tarea #{task_id}"
@@ -1671,8 +1698,6 @@ class TelegramBotHandler:
                 reply_markup=reply_markup
             )
         except Exception as e:
-            import traceback
-            logger = logging.getLogger(__name__)
             logger.error(f"Error asignando imagen a tarea: {e}", exc_info=True)
             await update.message.reply_text(
                 f"❌ Error al asignar imagen: {str(e)}",
@@ -1683,19 +1708,11 @@ class TelegramBotHandler:
                                                   task_id: int, photo_file, user):
         """Asigna una imagen a una tarea desde un callback"""
         try:
-            # Descargar la imagen
-            file = await context.bot.get_file(photo_file.file_id)
+            # Guardar imagen (local y SFTP)
+            remote_path = await self._save_image_to_storage(context, photo_file, task_id)
             
-            # Crear directorio para imágenes si no existe
-            images_dir = os.path.join(config.TEMP_DIR, 'task_images')
-            os.makedirs(images_dir, exist_ok=True)
-            
-            # Guardar imagen localmente
-            file_path = os.path.join(images_dir, f"{task_id}_{photo_file.file_unique_id}.jpg")
-            await file.download_to_drive(file_path)
-            
-            # Guardar en base de datos
-            self.db.add_image_to_task(task_id, photo_file.file_id, file_path)
+            # Guardar en base de datos (ruta remota)
+            self.db.add_image_to_task(task_id, photo_file.file_id, remote_path)
             
             task = self.db.get_task_by_id(task_id)
             task_title = task['title'] if task else f"Tarea #{task_id}"

@@ -358,8 +358,30 @@ class Database:
         return success
     
     def complete_task(self, task_id: int) -> bool:
-        """Marca tarea como completada"""
-        return self.update_task(task_id, status='completed')
+        """Marca tarea como completada y borra imágenes asociadas del SFTP"""
+        # Obtener imágenes de la tarea antes de completarla
+        images = self.get_task_images(task_id)
+        
+        # Marcar tarea como completada
+        success = self.update_task(task_id, status='completed')
+        
+        # Borrar imágenes del SFTP si está disponible
+        if success and images:
+            try:
+                from sftp_storage import sftp_storage
+                for image in images:
+                    file_path = image.get('file_path')
+                    if file_path and sftp_storage.enabled:
+                        try:
+                            sftp_storage.delete_image(file_path)
+                        except Exception as e:
+                            import logging
+                            logger = logging.getLogger(__name__)
+                            logger.error(f"Error borrando imagen del SFTP: {e}")
+            except ImportError:
+                pass  # sftp_storage no disponible
+        
+        return success
     
     def get_open_tasks_by_client(self, user_id: int, client_id: int,
                                  limit: int = 5) -> List[Dict]:
