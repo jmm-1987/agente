@@ -4,7 +4,11 @@ from datetime import datetime
 from typing import Optional, List, Dict
 from pathlib import Path
 import json
+import time
+import logging
 import config
+
+logger = logging.getLogger(__name__)
 
 
 class Database:
@@ -14,11 +18,71 @@ class Database:
         self.db_path = db_path or config.SQLITE_PATH
         self.init_db()
     
-    def get_connection(self):
-        """Obtiene conexión a la base de datos"""
-        conn = sqlite3.connect(self.db_path)
+    def get_connection(self, timeout: float = 20.0):
+        """
+        Obtiene conexión a la base de datos con timeout y configuración optimizada
+        
+        Args:
+            timeout: Tiempo máximo de espera para obtener un lock (segundos)
+        """
+        conn = sqlite3.connect(self.db_path, timeout=timeout)
         conn.row_factory = sqlite3.Row
+        # Habilitar WAL mode para mejor concurrencia
+        try:
+            conn.execute('PRAGMA journal_mode=WAL')
+        except sqlite3.OperationalError:
+            # Si WAL no está disponible, continuar sin él
+            pass
+        # Configurar busy timeout
+        conn.execute(f'PRAGMA busy_timeout={int(timeout * 1000)}')
         return conn
+    
+    def _execute_with_retry(self, operation, max_retries: int = 3, delay: float = 0.1):
+        """
+        Ejecuta una operación de base de datos con reintentos automáticos
+        
+        Args:
+            operation: Función que recibe una conexión y retorna el resultado
+            max_retries: Número máximo de reintentos
+            delay: Delay inicial entre reintentos (se duplica en cada intento)
+        """
+        last_error = None
+        for attempt in range(max_retries):
+            try:
+                conn = self.get_connection()
+                try:
+                    result = operation(conn)
+                    conn.commit()
+                    return result
+                except sqlite3.OperationalError as e:
+                    conn.rollback()
+                    if "database is locked" in str(e).lower():
+                        last_error = e
+                        if attempt < max_retries - 1:
+                            wait_time = delay * (2 ** attempt)
+                            logger.warning(
+                                f"Base de datos bloqueada, reintentando en {wait_time}s "
+                                f"(intento {attempt + 1}/{max_retries})"
+                            )
+                            time.sleep(wait_time)
+                            continue
+                    raise
+                finally:
+                    conn.close()
+            except sqlite3.OperationalError as e:
+                if "database is locked" in str(e).lower() and attempt < max_retries - 1:
+                    last_error = e
+                    wait_time = delay * (2 ** attempt)
+                    logger.warning(
+                        f"Base de datos bloqueada, reintentando en {wait_time}s "
+                        f"(intento {attempt + 1}/{max_retries})"
+                    )
+                    time.sleep(wait_time)
+                    continue
+                raise
+        
+        # Si llegamos aquí, todos los reintentos fallaron
+        raise last_error or sqlite3.OperationalError("database is locked")
     
     def init_db(self):
         """Inicializa las tablas de la base de datos"""
@@ -249,25 +313,22 @@ class Database:
                     description: str = None, priority: str = 'normal',
                     task_date: datetime = None, client_id: int = None,
                     client_name_raw: str = None, category: str = None) -> int:
-        """Crea una nueva tarea"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
+        """Crea una nueva tarea con reintentos automáticos"""
         task_date_str = task_date.isoformat() if task_date else None
         
-        cursor.execute('''
-            INSERT INTO tasks (
-                user_id, user_name, title, description, priority,
-                task_date, client_id, client_name_raw, category
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (user_id, user_name, title, description, priority,
-              task_date_str, client_id, client_name_raw, category))
+        def operation(conn):
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO tasks (
+                    user_id, user_name, title, description, priority,
+                    task_date, client_id, client_name_raw, category
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (user_id, user_name, title, description, priority,
+                  task_date_str, client_id, client_name_raw, category))
+            return cursor.lastrowid
         
-        task_id = cursor.lastrowid
-        conn.commit()
-        conn.close()
-        return task_id
+        return self._execute_with_retry(operation)
     
     def get_task_by_id(self, task_id: int) -> Optional[Dict]:
         """Obtiene tarea por ID"""
@@ -314,10 +375,7 @@ class Database:
         return [dict(row) for row in rows]
     
     def update_task(self, task_id: int, **kwargs) -> bool:
-        """Actualiza tarea"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
+        """Actualiza tarea con reintentos automáticos"""
         allowed_fields = ['title', 'description', 'status', 'priority',
                          'task_date', 'client_id', 'client_name_raw',
                          'google_event_id', 'google_event_link', 'solution', 'ampliacion', 'category']
@@ -332,20 +390,20 @@ class Database:
                 updates.append(f'{key} = ?')
                 params.append(value)
         
-        if updates:
-            updates.append('updated_at = CURRENT_TIMESTAMP')
-            params.append(task_id)
-            cursor.execute(f'''
-                UPDATE tasks SET {', '.join(updates)}
-                WHERE id = ?
-            ''', params)
-            conn.commit()
-            success = cursor.rowcount > 0
-        else:
-            success = False
+        if not updates:
+            return False
         
-        conn.close()
-        return success
+        def operation(conn):
+            cursor = conn.cursor()
+            updates_with_timestamp = updates + ['updated_at = CURRENT_TIMESTAMP']
+            params_with_id = params + [task_id]
+            cursor.execute(f'''
+                UPDATE tasks SET {', '.join(updates_with_timestamp)}
+                WHERE id = ?
+            ''', params_with_id)
+            return cursor.rowcount > 0
+        
+        return self._execute_with_retry(operation)
     
     def delete_task(self, task_id: int) -> bool:
         """Elimina tarea"""
@@ -520,19 +578,16 @@ class Database:
     # ========== IMÁGENES DE TAREAS ==========
     
     def add_image_to_task(self, task_id: int, file_id: str, file_path: str = None) -> int:
-        """Añade una imagen a una tarea"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
+        """Añade una imagen a una tarea con reintentos automáticos"""
+        def operation(conn):
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO task_images (task_id, file_id, file_path)
+                VALUES (?, ?, ?)
+            ''', (task_id, file_id, file_path))
+            return cursor.lastrowid
         
-        cursor.execute('''
-            INSERT INTO task_images (task_id, file_id, file_path)
-            VALUES (?, ?, ?)
-        ''', (task_id, file_id, file_path))
-        
-        image_id = cursor.lastrowid
-        conn.commit()
-        conn.close()
-        return image_id
+        return self._execute_with_retry(operation)
     
     def get_task_images(self, task_id: int) -> List[Dict]:
         """Obtiene todas las imágenes de una tarea"""
@@ -544,14 +599,13 @@ class Database:
         return [dict(row) for row in rows]
     
     def delete_task_image(self, image_id: int) -> bool:
-        """Elimina una imagen de una tarea"""
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        cursor.execute('DELETE FROM task_images WHERE id = ?', (image_id,))
-        conn.commit()
-        success = cursor.rowcount > 0
-        conn.close()
-        return success
+        """Elimina una imagen de una tarea con reintentos automáticos"""
+        def operation(conn):
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM task_images WHERE id = ?', (image_id,))
+            return cursor.rowcount > 0
+        
+        return self._execute_with_retry(operation)
 
 
 # Instancia global
