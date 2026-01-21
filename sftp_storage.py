@@ -47,6 +47,75 @@ class SFTPStorage:
         sftp = paramiko.SFTPClient.from_transport(transport)
         return sftp, transport
     
+    def get_home_directory(self, sftp=None):
+        """
+        Obtiene el directorio home del usuario SFTP
+        
+        Args:
+            sftp: Conexión SFTP existente (opcional, si no se proporciona se crea una nueva)
+            
+        Returns:
+            Directorio home del usuario o None si hay error
+        """
+        if not self.enabled:
+            return None
+        
+        should_close = False
+        if sftp is None:
+            sftp, transport = self._get_connection()
+            should_close = True
+        
+        try:
+            # Obtener el directorio de trabajo actual (que suele ser el home)
+            home_dir = sftp.getcwd()
+            logger.info(f"Directorio home del usuario SFTP: {home_dir}")
+            return home_dir
+        except Exception as e:
+            logger.error(f"Error obteniendo directorio home SFTP: {e}")
+            return None
+        finally:
+            if should_close:
+                sftp.close()
+                transport.close()
+    
+    def get_remote_file_path(self, stored_path: str, sftp=None) -> str:
+        """
+        Convierte una ruta guardada en BD a la ruta real en SFTP
+        
+        Args:
+            stored_path: Ruta guardada en BD (ej: /images/tasks/file.jpg)
+            sftp: Conexión SFTP existente (opcional)
+            
+        Returns:
+            Ruta real en SFTP (ej: segurymat/images/tasks/file.jpg)
+        """
+        if not stored_path:
+            return stored_path
+        
+        # Si la ruta guardada empieza con /images/tasks/, construir la ruta relativa
+        if stored_path.startswith('/images/tasks/'):
+            # Obtener el nombre del archivo
+            filename = os.path.basename(stored_path)
+            
+            # Obtener el directorio home del usuario SFTP
+            home_dir = self.get_home_directory(sftp)
+            
+            if home_dir:
+                # Construir ruta: home_dir + /images/tasks/ + filename
+                # Ejemplo: segurymat/images/tasks/file.jpg
+                remote_path = f"{home_dir}/images/tasks/{filename}"
+                logger.info(f"Ruta construida con home directory: {remote_path}")
+                return remote_path
+            else:
+                # Fallback: usar remote_path configurado + filename
+                if self.remote_path.startswith('/'):
+                    return f"{self.remote_path}/{filename}"
+                else:
+                    return f"/{self.remote_path}/{filename}"
+        
+        # Si la ruta ya tiene el formato correcto, retornarla tal cual
+        return stored_path
+    
     def upload_image(self, local_file_path: str, remote_filename: str) -> str:
         """
         Sube una imagen al servidor SFTP
