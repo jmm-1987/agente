@@ -18,71 +18,96 @@ class Database:
         self.db_path = db_path or config.SQLITE_PATH
         self.init_db()
     
-    def get_connection(self, timeout: float = 20.0):
+    def get_connection(self, timeout: float = 30.0):
         """
         Obtiene conexión a la base de datos con timeout y configuración optimizada
         
         Args:
-            timeout: Tiempo máximo de espera para obtener un lock (segundos)
+            timeout: Tiempo máximo de espera para obtener un lock (segundos, aumentado a 30)
         """
-        conn = sqlite3.connect(self.db_path, timeout=timeout)
+        conn = sqlite3.connect(self.db_path, timeout=timeout, check_same_thread=False)
         conn.row_factory = sqlite3.Row
         # Habilitar WAL mode para mejor concurrencia
         try:
             conn.execute('PRAGMA journal_mode=WAL')
+            conn.execute('PRAGMA synchronous=NORMAL')  # Balance entre seguridad y velocidad
+            conn.execute('PRAGMA cache_size=-64000')  # 64MB cache
+        except sqlite3.OperationalError as e:
+            logger.warning(f"No se pudo configurar WAL mode: {e}")
+        # Configurar busy timeout (en milisegundos)
+        try:
+            conn.execute(f'PRAGMA busy_timeout={int(timeout * 1000)}')
         except sqlite3.OperationalError:
-            # Si WAL no está disponible, continuar sin él
             pass
-        # Configurar busy timeout
-        conn.execute(f'PRAGMA busy_timeout={int(timeout * 1000)}')
         return conn
     
-    def _execute_with_retry(self, operation, max_retries: int = 3, delay: float = 0.1):
+    def _execute_with_retry(self, operation, max_retries: int = 5, delay: float = 0.2):
         """
         Ejecuta una operación de base de datos con reintentos automáticos
         
         Args:
             operation: Función que recibe una conexión y retorna el resultado
-            max_retries: Número máximo de reintentos
-            delay: Delay inicial entre reintentos (se duplica en cada intento)
+            max_retries: Número máximo de reintentos (aumentado a 5)
+            delay: Delay inicial entre reintentos (aumentado a 0.2s, se duplica en cada intento)
         """
         last_error = None
         for attempt in range(max_retries):
             try:
-                conn = self.get_connection()
+                conn = self.get_connection(timeout=30.0)  # Timeout aumentado a 30 segundos
                 try:
                     result = operation(conn)
                     conn.commit()
+                    if attempt > 0:
+                        logger.info(f"Operación completada después de {attempt + 1} intentos")
                     return result
                 except sqlite3.OperationalError as e:
                     conn.rollback()
-                    if "database is locked" in str(e).lower():
+                    error_msg = str(e).lower()
+                    if "database is locked" in error_msg or "locked" in error_msg:
                         last_error = e
                         if attempt < max_retries - 1:
                             wait_time = delay * (2 ** attempt)
                             logger.warning(
-                                f"Base de datos bloqueada, reintentando en {wait_time}s "
-                                f"(intento {attempt + 1}/{max_retries})"
+                                f"Base de datos bloqueada (intento {attempt + 1}/{max_retries}), "
+                                f"reintentando en {wait_time:.2f}s..."
                             )
                             time.sleep(wait_time)
                             continue
+                        else:
+                            logger.error(
+                                f"Base de datos bloqueada después de {max_retries} intentos. "
+                                f"Último error: {e}"
+                            )
                     raise
                 finally:
-                    conn.close()
+                    try:
+                        conn.close()
+                    except:
+                        pass
             except sqlite3.OperationalError as e:
-                if "database is locked" in str(e).lower() and attempt < max_retries - 1:
+                error_msg = str(e).lower()
+                if ("database is locked" in error_msg or "locked" in error_msg) and attempt < max_retries - 1:
                     last_error = e
                     wait_time = delay * (2 ** attempt)
                     logger.warning(
-                        f"Base de datos bloqueada, reintentando en {wait_time}s "
-                        f"(intento {attempt + 1}/{max_retries})"
+                        f"Base de datos bloqueada (intento {attempt + 1}/{max_retries}), "
+                        f"reintentando en {wait_time:.2f}s..."
                     )
                     time.sleep(wait_time)
                     continue
+                elif attempt == max_retries - 1:
+                    logger.error(
+                        f"Error de base de datos después de {max_retries} intentos: {e}"
+                    )
+                raise
+            except Exception as e:
+                logger.error(f"Error inesperado en operación de base de datos: {e}", exc_info=True)
                 raise
         
         # Si llegamos aquí, todos los reintentos fallaron
-        raise last_error or sqlite3.OperationalError("database is locked")
+        error_msg = "database is locked después de múltiples reintentos"
+        logger.error(error_msg)
+        raise sqlite3.OperationalError(error_msg) from last_error
     
     def init_db(self):
         """Inicializa las tablas de la base de datos"""
