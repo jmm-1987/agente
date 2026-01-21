@@ -1,5 +1,5 @@
 """Aplicación Flask principal con webhook de Telegram y web app"""
-from flask import Flask, request, jsonify, render_template, redirect, url_for, session, send_file
+from flask import Flask, request, jsonify, render_template, redirect, url_for, session, send_file, after_this_request
 from functools import wraps
 import logging
 import json
@@ -782,7 +782,7 @@ def get_task_image(task_id, image_id):
                 # Configurar limpieza del archivo temporal después de enviarlo
                 cleanup_path = temp_path
                 
-                @app.after_this_request
+                @after_this_request
                 def cleanup_temp_file(response):
                     try:
                         if cleanup_path and os.path.exists(cleanup_path):
