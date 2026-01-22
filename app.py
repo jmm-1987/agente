@@ -746,20 +746,31 @@ def get_task_image(task_id, image_id):
                 if not os.path.exists(temp_path) or os.path.getsize(temp_path) == 0:
                     raise FileNotFoundError(f"Archivo descargado está vacío o no existe: {temp_path}")
                 
-                # Configurar limpieza del archivo temporal después de enviarlo
-                cleanup_path = temp_path
-                
-                @app.after_this_request
-                def cleanup_temp_file(response):
+                # Leer el archivo y limpiarlo después
+                def generate_and_cleanup():
+                    """Genera la respuesta y limpia el archivo después"""
                     try:
-                        if cleanup_path and os.path.exists(cleanup_path):
-                            os.remove(cleanup_path)
-                            logger.info(f"Archivo temporal borrado: {cleanup_path}")
-                    except Exception as e:
-                        logger.warning(f"No se pudo borrar archivo temporal: {e}")
-                    return response
+                        with open(temp_path, 'rb') as f:
+                            while True:
+                                chunk = f.read(8192)  # Leer en chunks de 8KB
+                                if not chunk:
+                                    break
+                                yield chunk
+                    finally:
+                        # Limpiar el archivo después de enviarlo
+                        try:
+                            if os.path.exists(temp_path):
+                                os.remove(temp_path)
+                                logger.info(f"Archivo temporal borrado: {temp_path}")
+                        except Exception as e:
+                            logger.warning(f"No se pudo borrar archivo temporal: {e}")
                 
-                return send_file(temp_path, mimetype='image/jpeg')
+                from flask import Response
+                return Response(
+                    generate_and_cleanup(),
+                    mimetype='image/jpeg',
+                    headers={'Content-Disposition': f'inline; filename={os.path.basename(file_path)}'}
+                )
             finally:
                 sftp.close()
                 transport.close()

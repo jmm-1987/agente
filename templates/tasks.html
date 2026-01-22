@@ -194,7 +194,7 @@
     {% if tasks_without_date %}
     <div class="no-date-section" style="margin-bottom: 2rem;">
         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;">
-            <h3 style="color: white; margin: 0; font-size: 1.2rem; font-weight: 600;">📋 Tareas sin fecha</h3>
+            <!--<h3 style="color: white; margin: 0; font-size: 1.2rem; font-weight: 600;">📋 Tareas sin fecha</h3>-->
             <button type="button" class="toggle-section-btn" onclick="toggleNoDateSection()" id="toggleNoDateBtn" title="Mostrar/Ocultar tareas sin fecha">
                 <svg id="toggleNoDateIcon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" style="transition: transform 0.3s ease;">
                     <path d="M6 9l6 6 6-6"/>
@@ -372,16 +372,6 @@
                         {% endfor %}
                     </select>
                 </div>
-            </div>
-            
-            <div class="form-group" style="margin-bottom: 1rem;">
-                <label for="editClient" style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #333;">Cliente:</label>
-                <select id="editClient" name="client_id" style="width: 100%; padding: 0.75rem; border: 1.5px solid #e0e0e0; border-radius: 6px; font-size: 1rem;">
-                    <option value="">Sin cliente</option>
-                    {% for client in clients %}
-                    <option value="{{ client.id }}">{{ client.name }}</option>
-                    {% endfor %}
-                </select>
             </div>
             
             <div class="form-group" style="margin-bottom: 1rem;">
@@ -980,7 +970,6 @@ async function openEditTaskModal(taskId) {
             document.getElementById('editPriority').value = task.priority || 'normal';
             document.getElementById('editTaskDate').value = task.task_date ? task.task_date.split('T')[0] : '';
             document.getElementById('editCategory').value = task.category || '';
-            document.getElementById('editClient').value = task.client_id || '';
             document.getElementById('editAmpliacion').value = task.ampliacion || '';
             
             saveButton.disabled = false;
@@ -1016,7 +1005,6 @@ async function saveTaskEdit(event) {
         priority: formData.get('priority'),
         task_date: formData.get('task_date') || null,
         category: formData.get('category') || null,
-        client_id: formData.get('client_id') ? parseInt(formData.get('client_id')) : null,
         ampliacion: formData.get('ampliacion') || null
     };
     
