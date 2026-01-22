@@ -84,3 +84,4 @@ Para verificar que SFTP está funcionando correctamente:
 - Verifica que `paramiko` está instalado (debería instalarse automáticamente)
 - Revisa los logs para ver si hay mensajes de advertencia sobre SFTP
 
+

@@ -49,6 +49,26 @@ class IntentParser:
         'el viernes': lambda: _next_weekday(4),
         'el sábado': lambda: _next_weekday(5),
         'el domingo': lambda: _next_weekday(6),
+        'lunes': lambda: _next_weekday(0),
+        'martes': lambda: _next_weekday(1),
+        'miércoles': lambda: _next_weekday(2),
+        'jueves': lambda: _next_weekday(3),
+        'viernes': lambda: _next_weekday(4),
+        'sábado': lambda: _next_weekday(5),
+        'domingo': lambda: _next_weekday(6),
+    }
+    
+    # Mapeo de días de la semana en español
+    WEEKDAY_MAP = {
+        'lunes': 0,
+        'martes': 1,
+        'miércoles': 2,
+        'miercoles': 2,  # Sin tilde
+        'jueves': 3,
+        'viernes': 4,
+        'sábado': 5,
+        'sabado': 5,  # Sin tilde
+        'domingo': 6,
     }
     
     # Mapeo de prioridades
@@ -231,8 +251,29 @@ class IntentParser:
     
     def _extract_date(self, text: str) -> Optional[datetime]:
         """Extrae fecha del texto usando dateparser"""
-        # Primero verificar patrones relativos comunes
         text_lower = text.lower()
+        
+        # Primero buscar días de la semana con regex más flexible
+        # Buscar patrones como "el lunes", "lunes", "el próximo lunes", etc.
+        weekday_pattern = r'\b(?:el\s+)?(?:próximo|proximo|siguiente)?\s*(lunes|martes|mi[ée]rcoles|jueves|viernes|s[áa]bado|domingo)\b'
+        weekday_match = re.search(weekday_pattern, text_lower)
+        
+        if weekday_match:
+            weekday_name = weekday_match.group(1)
+            # Normalizar (quitar tildes para comparación)
+            weekday_name_normalized = weekday_name.replace('á', 'a').replace('é', 'e')
+            
+            # Buscar en el mapeo
+            weekday_num = None
+            for key, value in self.WEEKDAY_MAP.items():
+                if key.replace('á', 'a').replace('é', 'e') == weekday_name_normalized:
+                    weekday_num = value
+                    break
+            
+            if weekday_num is not None:
+                return _next_weekday(weekday_num)
+        
+        # Verificar patrones relativos comunes
         for pattern, date_func in self.DATE_PATTERNS.items():
             if pattern in text_lower:
                 return date_func()
@@ -300,10 +341,23 @@ class IntentParser:
 
 
 def _next_weekday(weekday: int) -> datetime:
-    """Obtiene el próximo día de la semana (0=lunes, 6=domingo)"""
+    """
+    Obtiene el día de la semana más próximo (0=lunes, 6=domingo)
+    Si hoy es ese día, devuelve hoy. Si no, devuelve el próximo.
+    """
     today = datetime.now()
-    days_ahead = weekday - today.weekday()
-    if days_ahead <= 0:
+    current_weekday = today.weekday()
+    days_ahead = weekday - current_weekday
+    
+    # Si el día solicitado es hoy o ya pasó esta semana, usar el próximo
+    if days_ahead < 0:
+        # Ya pasó esta semana, ir a la próxima semana
         days_ahead += 7
-    return (today + timedelta(days=days_ahead)).replace(hour=9, minute=0, second=0, microsecond=0)
+    elif days_ahead == 0:
+        # Es hoy, usar hoy
+        days_ahead = 0
+    # Si days_ahead > 0, es un día futuro de esta semana, usar ese
+    
+    result_date = (today + timedelta(days=days_ahead)).replace(hour=9, minute=0, second=0, microsecond=0)
+    return result_date
 

@@ -42,6 +42,7 @@ class TelegramBotHandler:
                 KeyboardButton("✅ Cerrar tareas")
             ],
             [
+                KeyboardButton("❌ Cancelar"),
                 KeyboardButton("📝 Ampliar tareas")
             ]
         ]
@@ -66,7 +67,7 @@ class TelegramBotHandler:
         # Manejar botones del teclado
         if text == "📋 Mostrar tareas pendientes":
             user = update.effective_user
-            await self._show_pending_tasks_text(update, user)
+            await self._show_pending_tasks_filter_menu(update, user)
             return
         
         if text == "✅ Cerrar tareas":
@@ -77,6 +78,11 @@ class TelegramBotHandler:
         if text == "📝 Ampliar tareas":
             user = update.effective_user
             await self._show_ampliar_tasks_menu_text(update, user)
+            return
+        
+        if text == "❌ Cancelar":
+            user = update.effective_user
+            await self._handle_cancel_action(update, user)
             return
         
         # Comandos de ayuda
@@ -1018,7 +1024,19 @@ class TelegramBotHandler:
             await query.edit_message_text("❌ Operación cancelada.", reply_markup=self._get_action_buttons())
         
         elif action == 'show_pending_tasks':
-            await self._show_pending_tasks(query, update)
+            await self._show_pending_tasks_filter_menu_from_callback(query, update)
+        
+        elif action == 'filter_tasks_all':
+            await self._show_filtered_tasks(query, update, filter_type='all')
+        
+        elif action == 'filter_tasks_no_date':
+            await self._show_filtered_tasks(query, update, filter_type='no_date')
+        
+        elif action == 'filter_tasks_today':
+            await self._show_filtered_tasks(query, update, filter_type='today')
+        
+        elif action == 'filter_tasks_this_week':
+            await self._show_filtered_tasks(query, update, filter_type='this_week')
         
         elif action == 'close_tasks_menu':
             await self._show_close_tasks_menu(query, update)
@@ -1299,19 +1317,101 @@ class TelegramBotHandler:
         except Exception as e:
             await query.edit_message_text(f"❌ Error al crear evento: {str(e)}")
     
-    async def _show_pending_tasks(self, query, update):
-        """Muestra las tareas pendientes del usuario"""
-        user = update.effective_user
-        tasks = self.db.get_tasks(user_id=user.id, status='open')
+    async def _show_pending_tasks_filter_menu(self, update, user):
+        """Muestra menú de filtros para tareas pendientes (desde teclado de respuesta)"""
+        keyboard = [
+            [
+                InlineKeyboardButton("📋 Todas", callback_data="filter_tasks_all"),
+                InlineKeyboardButton("📅 Sin fecha", callback_data="filter_tasks_no_date")
+            ],
+            [
+                InlineKeyboardButton("📆 Hoy", callback_data="filter_tasks_today"),
+                InlineKeyboardButton("📅 Esta semana", callback_data="filter_tasks_this_week")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        reply_keyboard = self._get_reply_keyboard()
         
+        await update.message.reply_text(
+            "📋 ¿Qué tareas quieres ver?",
+            reply_markup=reply_markup
+        )
+    
+    async def _show_pending_tasks_filter_menu_from_callback(self, query, update):
+        """Muestra menú de filtros para tareas pendientes (desde callback)"""
+        keyboard = [
+            [
+                InlineKeyboardButton("📋 Todas", callback_data="filter_tasks_all"),
+                InlineKeyboardButton("📅 Sin fecha", callback_data="filter_tasks_no_date")
+            ],
+            [
+                InlineKeyboardButton("📆 Hoy", callback_data="filter_tasks_today"),
+                InlineKeyboardButton("📅 Esta semana", callback_data="filter_tasks_this_week")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            "📋 ¿Qué tareas quieres ver?",
+            reply_markup=reply_markup
+        )
+    
+    async def _show_filtered_tasks(self, query, update, filter_type: str):
+        """Muestra tareas filtradas según el tipo de filtro"""
+        user = update.effective_user
+        from datetime import datetime, timedelta
+        
+        # Obtener todas las tareas abiertas
+        all_tasks = self.db.get_tasks(user_id=user.id, status='open')
+        
+        # Aplicar filtro
+        if filter_type == 'all':
+            tasks = all_tasks
+            filter_name = "Todas"
+        elif filter_type == 'no_date':
+            tasks = [t for t in all_tasks if not t.get('task_date')]
+            filter_name = "Sin fecha"
+        elif filter_type == 'today':
+            today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+            tasks = []
+            for task in all_tasks:
+                if task.get('task_date'):
+                    try:
+                        task_dt = datetime.fromisoformat(task['task_date'].replace('Z', '+00:00'))
+                        if task_dt.date() == today.date():
+                            tasks.append(task)
+                    except (ValueError, TypeError):
+                        pass
+            filter_name = "Hoy"
+        elif filter_type == 'this_week':
+            today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+            # Lunes de esta semana
+            days_since_monday = today.weekday()
+            week_start = today - timedelta(days=days_since_monday)
+            week_end = week_start + timedelta(days=6)
+            tasks = []
+            for task in all_tasks:
+                if task.get('task_date'):
+                    try:
+                        task_dt = datetime.fromisoformat(task['task_date'].replace('Z', '+00:00'))
+                        if week_start.date() <= task_dt.date() <= week_end.date():
+                            tasks.append(task)
+                    except (ValueError, TypeError):
+                        pass
+            filter_name = "Esta semana"
+        else:
+            tasks = all_tasks
+            filter_name = "Todas"
+        
+        # Formatear mensaje
         if not tasks:
             await query.edit_message_text(
-                "✅ No tienes tareas pendientes.",
+                f"✅ No tienes tareas pendientes ({filter_name.lower()}).",
                 reply_markup=self._get_action_buttons()
             )
             return
         
-        message = f"📋 Tienes {len(tasks)} tarea(s) pendiente(s):\n\n"
+        message = f"📋 Tareas pendientes ({filter_name}): {len(tasks)}\n\n"
         for i, task in enumerate(tasks[:10], 1):  # Máximo 10 tareas
             priority_emoji = {
                 'urgent': '🔴',
@@ -1323,7 +1423,6 @@ class TelegramBotHandler:
             date_str = ""
             if task.get('task_date'):
                 try:
-                    from datetime import datetime
                     task_dt = datetime.fromisoformat(task['task_date'].replace('Z', '+00:00'))
                     date_str = f" - 📅 {task_dt.strftime('%d/%m/%Y')}"
                 except:
@@ -1341,49 +1440,6 @@ class TelegramBotHandler:
             message += f"\n... y {len(tasks) - 10} tarea(s) más."
         
         await query.edit_message_text(message, reply_markup=self._get_action_buttons())
-    
-    async def _show_pending_tasks_text(self, update, user):
-        """Muestra las tareas pendientes del usuario (desde teclado de respuesta)"""
-        tasks = self.db.get_tasks(user_id=user.id, status='open')
-        reply_markup = self._get_reply_keyboard()
-        
-        if not tasks:
-            await update.message.reply_text(
-                "✅ No tienes tareas pendientes.",
-                reply_markup=reply_markup
-            )
-            return
-        
-        message = f"📋 Tienes {len(tasks)} tarea(s) pendiente(s):\n\n"
-        for i, task in enumerate(tasks[:10], 1):  # Máximo 10 tareas
-            priority_emoji = {
-                'urgent': '🔴',
-                'high': '🟠',
-                'normal': '🟡',
-                'low': '🟢'
-            }.get(task.get('priority', 'normal'), '🟡')
-            
-            date_str = ""
-            if task.get('task_date'):
-                try:
-                    from datetime import datetime
-                    task_dt = datetime.fromisoformat(task['task_date'].replace('Z', '+00:00'))
-                    date_str = f" - 📅 {task_dt.strftime('%d/%m/%Y')}"
-                except:
-                    pass
-            
-            client_str = ""
-            if task.get('client_id'):
-                client = self.db.get_client_by_id(task['client_id'])
-                if client:
-                    client_str = f" - 👤 {client['name']}"
-            
-            message += f"{i}. {priority_emoji} {task['title']}{date_str}{client_str}\n"
-        
-        if len(tasks) > 10:
-            message += f"\n... y {len(tasks) - 10} tarea(s) más."
-        
-        await update.message.reply_text(message, reply_markup=reply_markup)
     
     async def _show_close_tasks_menu(self, query, update):
         """Muestra menú para cerrar tareas"""
@@ -1781,4 +1837,44 @@ class TelegramBotHandler:
                 f"❌ Error al añadir ampliación: {str(e)}",
                 reply_markup=reply_markup
             )
+    
+    async def _handle_cancel_action(self, update, user):
+        """Cancela cualquier proceso en curso del usuario"""
+        reply_markup = self._get_reply_keyboard()
+        
+        # Verificar si hay un proceso en curso
+        user_state = self.user_states.get(user.id)
+        
+        if not user_state:
+            # No hay proceso en curso
+            await update.message.reply_text(
+                "ℹ️ No hay ningún proceso en curso para cancelar.",
+                reply_markup=reply_markup
+            )
+            return
+        
+        # Obtener información del proceso en curso
+        action = user_state.get('action', 'unknown')
+        
+        # Mapeo de acciones a mensajes descriptivos
+        action_messages = {
+            'waiting_category': 'selección de categoría',
+            'waiting_priority': 'selección de prioridad',
+            'ampliar_task': 'ampliación de tarea',
+            'creating_task_with_image': 'creación de tarea con imagen',
+            'waiting_image_action': 'acción de imagen',
+            'waiting_task_for_image': 'asignación de imagen a tarea',
+            'assign_image_to_task': 'asignación de imagen'
+        }
+        
+        action_description = action_messages.get(action, 'proceso')
+        
+        # Limpiar estado del usuario
+        del self.user_states[user.id]
+        
+        await update.message.reply_text(
+            f"❌ Proceso cancelado.\n\n"
+            f"Se ha cancelado la {action_description} que estaba en curso.",
+            reply_markup=reply_markup
+        )
 

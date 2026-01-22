@@ -1,21 +1,20 @@
-"""Módulo para manejar almacenamiento de imágenes en SFTP"""
+"""Módulo para almacenamiento SFTP de imágenes"""
 import os
 import logging
-import config
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+# Verificar si paramiko está disponible
 try:
     import paramiko
     PARAMIKO_AVAILABLE = True
 except ImportError:
     PARAMIKO_AVAILABLE = False
-    logger.warning("paramiko no está instalado. Instala con: pip install paramiko")
+    logger.warning("paramiko no está instalado. SFTP no estará disponible.")
 
 
 class SFTPStorage:
-    """Gestor de almacenamiento SFTP para imágenes"""
+    """Clase para manejar almacenamiento SFTP de imágenes"""
     
     def __init__(self):
         self.host = os.getenv('SFTP_HOST', '')
@@ -23,235 +22,95 @@ class SFTPStorage:
         self.username = os.getenv('SFTP_USERNAME', '')
         self.password = os.getenv('SFTP_PASSWORD', '')
         self.remote_path = os.getenv('SFTP_REMOTE_PATH', '/images/tasks')
-        self.enabled = bool(self.host and self.username and self.password and PARAMIKO_AVAILABLE)
+        self.web_domain = os.getenv('SFTP_WEB_DOMAIN', '')
         
-        if not PARAMIKO_AVAILABLE:
-            logger.warning("SFTP deshabilitado: paramiko no está instalado")
-        elif not self.enabled:
-            logger.warning(
-                f"SFTP deshabilitado: faltan variables de entorno. "
-                f"Host: {'✓' if self.host else '✗'}, "
-                f"Username: {'✓' if self.username else '✗'}, "
-                f"Password: {'✓' if self.password else '✗'}"
-            )
+        # Verificar si SFTP está habilitado
+        self.enabled = (
+            PARAMIKO_AVAILABLE and
+            self.host and
+            self.username and
+            self.password
+        )
+        
+        if self.enabled:
+            logger.info(f"SFTP configurado para {self.host}:{self.port}")
         else:
-            logger.info(f"✅ SFTP configurado para {self.host}:{self.port}, ruta remota: {self.remote_path}")
+            logger.warning(
+                f"SFTP no está habilitado. "
+                f"Host: {self.host or 'NO CONFIGURADO'}, "
+                f"Username: {self.username or 'NO CONFIGURADO'}, "
+                f"Password: {'✓' if self.password else '✗'}, "
+                f"Paramiko disponible: {PARAMIKO_AVAILABLE}"
+            )
     
     def _get_connection(self):
-        """Crea y retorna una conexión SFTP"""
+        """Obtiene una conexión SFTP"""
         if not self.enabled:
             raise RuntimeError("SFTP no está habilitado")
         
         transport = paramiko.Transport((self.host, self.port))
         transport.connect(username=self.username, password=self.password)
         sftp = paramiko.SFTPClient.from_transport(transport)
+        
         return sftp, transport
-    
-    def get_home_directory(self, sftp=None):
-        """
-        Obtiene el directorio home del usuario SFTP
-        
-        Args:
-            sftp: Conexión SFTP existente (opcional, si no se proporciona se crea una nueva)
-            
-        Returns:
-            Directorio home del usuario o None si hay error
-        """
-        if not self.enabled:
-            return None
-        
-        should_close = False
-        if sftp is None:
-            sftp, transport = self._get_connection()
-            should_close = True
-        
-        try:
-            # Obtener el directorio de trabajo actual (que suele ser el home)
-            home_dir = sftp.getcwd()
-            logger.info(f"Directorio home del usuario SFTP: {home_dir}")
-            return home_dir
-        except Exception as e:
-            logger.error(f"Error obteniendo directorio home SFTP: {e}")
-            return None
-        finally:
-            if should_close:
-                sftp.close()
-                transport.close()
-    
-    def get_remote_file_path(self, stored_path: str, sftp=None) -> str:
-        """
-        Convierte una ruta guardada en BD a la ruta real en SFTP
-        
-        Args:
-            stored_path: Ruta guardada en BD (ej: /images/tasks/file.jpg)
-            sftp: Conexión SFTP existente (opcional)
-            
-        Returns:
-            Ruta real en SFTP (ej: segurymat/images/tasks/file.jpg)
-        """
-        if not stored_path:
-            return stored_path
-        
-        # Si la ruta guardada empieza con /images/tasks/, construir la ruta relativa
-        if stored_path.startswith('/images/tasks/'):
-            # Obtener el nombre del archivo
-            filename = os.path.basename(stored_path)
-            
-            # Obtener el directorio home del usuario SFTP
-            home_dir = self.get_home_directory(sftp)
-            
-            if home_dir:
-                # Construir ruta: home_dir + /images/tasks/ + filename
-                # Ejemplo: segurymat/images/tasks/file.jpg
-                remote_path = f"{home_dir}/images/tasks/{filename}"
-                logger.info(f"Ruta construida con home directory: {remote_path}")
-                return remote_path
-            else:
-                # Fallback: usar remote_path configurado + filename
-                if self.remote_path.startswith('/'):
-                    return f"{self.remote_path}/{filename}"
-                else:
-                    return f"/{self.remote_path}/{filename}"
-        
-        # Si la ruta ya tiene el formato correcto, retornarla tal cual
-        return stored_path
     
     def upload_image(self, local_file_path: str, remote_filename: str) -> str:
         """
         Sube una imagen al servidor SFTP
         
         Args:
-            local_file_path: Ruta local del archivo
+            local_file_path: Ruta local del archivo a subir
             remote_filename: Nombre del archivo en el servidor remoto
             
         Returns:
-            Ruta remota del archivo subido
+            Ruta remota completa del archivo subido
         """
         if not self.enabled:
             raise RuntimeError("SFTP no está habilitado")
         
-        if not os.path.exists(local_file_path):
-            raise FileNotFoundError(f"Archivo local no encontrado: {local_file_path}")
+        sftp, transport = self._get_connection()
         
         try:
-            logger.info(f"Conectando a SFTP {self.host}:{self.port}...")
-            sftp, transport = self._get_connection()
-            logger.info("Conexión SFTP establecida")
-            
             # Asegurar que el directorio remoto existe
             try:
-                logger.info(f"Verificando directorio remoto: {self.remote_path}")
-                sftp.chdir(self.remote_path)
-                logger.info(f"Directorio remoto existe: {self.remote_path}")
-            except IOError as e:
-                logger.info(f"Directorio remoto no existe, creándolo: {self.remote_path} (error: {e})")
-                # Crear directorio si no existe
-                self._create_remote_directory(sftp, self.remote_path)
-                sftp.chdir(self.remote_path)
-                logger.info(f"Directorio remoto creado exitosamente: {self.remote_path}")
+                sftp.mkdir(self.remote_path)
+            except IOError:
+                # El directorio ya existe, está bien
+                pass
+            
+            # Construir ruta remota completa
+            remote_file_path = f"{self.remote_path}/{remote_filename}"
             
             # Subir archivo
-            remote_file_path = f"{self.remote_path}/{remote_filename}"
-            logger.info(f"Subiendo archivo {local_file_path} a {remote_file_path}...")
-            file_size = os.path.getsize(local_file_path)
-            logger.info(f"Tamaño del archivo local: {file_size} bytes")
             sftp.put(local_file_path, remote_file_path)
-            logger.info(f"Archivo subido exitosamente a {remote_file_path}")
+            logger.info(f"Imagen subida a SFTP: {remote_file_path}")
             
-            # Verificar que el archivo existe
-            try:
-                stat = sftp.stat(remote_file_path)
-                logger.info(f"Archivo verificado en SFTP: {remote_file_path}, tamaño: {stat.st_size} bytes")
-            except Exception as e:
-                logger.warning(f"No se pudo verificar el archivo subido: {e}")
-            
+            return remote_file_path
+        finally:
             sftp.close()
             transport.close()
-            
-            logger.info(f"✅ Imagen subida a SFTP: {remote_file_path}")
-            return remote_file_path
-            
-        except Exception as e:
-            logger.error(f"Error subiendo imagen a SFTP: {e}", exc_info=True)
-            raise
     
-    def delete_image(self, remote_file_path: str) -> bool:
+    def delete_image(self, remote_file_path: str):
         """
-        Borra una imagen del servidor SFTP
+        Elimina una imagen del servidor SFTP
         
         Args:
-            remote_file_path: Ruta remota del archivo a borrar
-            
-        Returns:
-            True si se borró correctamente, False en caso contrario
+            remote_file_path: Ruta remota del archivo a eliminar
         """
         if not self.enabled:
-            logger.warning("SFTP no está habilitado, no se puede borrar")
-            return False
+            raise RuntimeError("SFTP no está habilitado")
+        
+        sftp, transport = self._get_connection()
         
         try:
-            sftp, transport = self._get_connection()
-            
-            # Extraer solo el nombre del archivo si viene con ruta completa
-            filename = os.path.basename(remote_file_path)
-            remote_path = f"{self.remote_path}/{filename}"
-            
-            try:
-                sftp.remove(remote_path)
-                logger.info(f"Imagen borrada de SFTP: {remote_path}")
-                deleted = True
-            except IOError as e:
-                logger.warning(f"Imagen no encontrada en SFTP para borrar: {remote_path} - {e}")
-                deleted = False
-            
+            sftp.remove(remote_file_path)
+            logger.info(f"Imagen eliminada de SFTP: {remote_file_path}")
+        except FileNotFoundError:
+            logger.warning(f"Archivo no encontrado en SFTP: {remote_file_path}")
+        finally:
             sftp.close()
             transport.close()
-            
-            return deleted
-            
-        except Exception as e:
-            logger.error(f"Error borrando imagen de SFTP: {e}", exc_info=True)
-            return False
-    
-    def _create_remote_directory(self, sftp, remote_path: str):
-        """Crea un directorio remoto recursivamente"""
-        try:
-            logger.info(f"Creando directorio: {remote_path}")
-            sftp.mkdir(remote_path)
-            logger.info(f"Directorio creado: {remote_path}")
-        except IOError as e:
-            logger.info(f"No se pudo crear directorio {remote_path}, intentando crear padre: {e}")
-            # Si falla, intentar crear el directorio padre primero
-            parent = os.path.dirname(remote_path)
-            if parent and parent != '/':
-                self._create_remote_directory(sftp, parent)
-            try:
-                sftp.mkdir(remote_path)
-                logger.info(f"Directorio creado después de crear padre: {remote_path}")
-            except IOError as e2:
-                logger.error(f"Error creando directorio {remote_path}: {e2}")
-                raise
-    
-    def get_public_url(self, remote_file_path: str) -> str:
-        """
-        Genera la URL pública de una imagen
-        
-        Args:
-            remote_file_path: Ruta remota del archivo
-            
-        Returns:
-            URL pública para acceder a la imagen
-        """
-        # Si tienes un dominio web configurado para servir las imágenes
-        web_domain = os.getenv('SFTP_WEB_DOMAIN', '')
-        if web_domain:
-            filename = os.path.basename(remote_file_path)
-            return f"{web_domain}/images/tasks/{filename}"
-        
-        # Si no hay dominio configurado, retornar la ruta remota
-        return remote_file_path
 
 
-# Instancia global
+# Crear instancia global
 sftp_storage = SFTPStorage()
-

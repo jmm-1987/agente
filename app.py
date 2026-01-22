@@ -1,5 +1,5 @@
 """Aplicación Flask principal con webhook de Telegram y web app"""
-from flask import Flask, request, jsonify, render_template, redirect, url_for, session, send_file, after_this_request
+from flask import Flask, request, jsonify, render_template, redirect, url_for, session, send_file
 from functools import wraps
 import logging
 import json
@@ -714,8 +714,6 @@ def get_task_image(task_id, image_id):
         if file_path.startswith('/images/tasks/') or (sftp_storage.enabled and not os.path.exists(file_path)):
             is_remote_path = True
     
-    logger.info(f"Ruta de imagen: {file_path}, es remota: {is_remote_path}, SFTP habilitado: {sftp_storage.enabled}")
-    
     if is_remote_path and sftp_storage.enabled:
         # Descargar desde SFTP temporalmente
         temp_path = None
@@ -728,61 +726,30 @@ def get_task_image(task_id, image_id):
             # Descargar desde SFTP
             sftp, transport = sftp_storage._get_connection()
             try:
-                # Convertir la ruta guardada en BD a la ruta real en SFTP
-                # La ruta guardada es como /images/tasks/1_AQADKQxrG8AgiVN-.jpg
-                # Pero en SFTP puede ser segurymat/images/tasks/1_AQADKQxrG8AgiVN-.jpg
-                remote_file_path = sftp_storage.get_remote_file_path(file_path, sftp)
+                # Usar la ruta remota directamente (ya viene completa desde upload_image)
+                # Si la ruta empieza con /images/tasks/, usarla directamente
+                # Si no, construirla usando remote_path + nombre de archivo
+                if file_path.startswith('/'):
+                    remote_file_path = file_path
+                else:
+                    # Si no empieza con /, podría ser relativa
+                    remote_filename = os.path.basename(file_path)
+                    remote_file_path = f"{sftp_storage.remote_path}/{remote_filename}"
                 
-                logger.info(f"Intentando descargar desde SFTP:")
-                logger.info(f"  - Ruta guardada en BD: {file_path}")
-                logger.info(f"  - Ruta remota calculada: {remote_file_path}")
-                logger.info(f"  - Ruta temporal: {temp_path}")
-                logger.info(f"  - Remote path configurado: {sftp_storage.remote_path}")
-                
-                # Verificar que el archivo existe en SFTP antes de descargar
-                try:
-                    stat = sftp.stat(remote_file_path)
-                    logger.info(f"Archivo encontrado en SFTP, tamaño: {stat.st_size} bytes")
-                except IOError as e:
-                    logger.error(f"Archivo no encontrado en SFTP: {remote_file_path} - {e}")
-                    # Intentar con la ruta original guardada en BD
-                    logger.info(f"Intentando con ruta original de BD: {file_path}")
-                    try:
-                        stat = sftp.stat(file_path)
-                        logger.info(f"Archivo encontrado con ruta original, tamaño: {stat.st_size} bytes")
-                        remote_file_path = file_path
-                    except IOError as e2:
-                        logger.error(f"Archivo tampoco encontrado con ruta original: {e2}")
-                        # Intentar con solo el nombre del archivo en el remote_path
-                        filename = os.path.basename(file_path)
-                        alternative_path = f"{sftp_storage.remote_path}/{filename}"
-                        logger.info(f"Intentando ruta alternativa: {alternative_path}")
-                        try:
-                            stat = sftp.stat(alternative_path)
-                            logger.info(f"Archivo encontrado en ruta alternativa, tamaño: {stat.st_size} bytes")
-                            remote_file_path = alternative_path
-                        except IOError as e3:
-                            logger.error(f"Archivo tampoco encontrado en ruta alternativa: {e3}")
-                            raise FileNotFoundError(f"Imagen no encontrada en SFTP. Intentadas: {remote_file_path}, {file_path}, {alternative_path}")
+                logger.info(f"Descargando imagen desde SFTP: {remote_file_path}")
                 
                 # Descargar archivo
                 sftp.get(remote_file_path, temp_path)
-                logger.info(f"Imagen descargada exitosamente a: {temp_path}")
+                logger.info(f"Imagen descargada temporalmente a: {temp_path}")
                 
                 # Verificar que el archivo se descargó correctamente
-                if not os.path.exists(temp_path):
-                    raise FileNotFoundError(f"Archivo descargado no existe: {temp_path}")
-                
-                file_size = os.path.getsize(temp_path)
-                if file_size == 0:
-                    raise FileNotFoundError(f"Archivo descargado está vacío: {temp_path}")
-                
-                logger.info(f"Archivo temporal verificado, tamaño: {file_size} bytes")
+                if not os.path.exists(temp_path) or os.path.getsize(temp_path) == 0:
+                    raise FileNotFoundError(f"Archivo descargado está vacío o no existe: {temp_path}")
                 
                 # Configurar limpieza del archivo temporal después de enviarlo
                 cleanup_path = temp_path
                 
-                @after_this_request
+                @app.after_this_request
                 def cleanup_temp_file(response):
                     try:
                         if cleanup_path and os.path.exists(cleanup_path):
